@@ -1,0 +1,30 @@
+# Environment
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Models - COMMENTED OUT for Streamlit Cloud deployment
+# Uncomment if you don't want to commit model files
+# models/*.pkl
+
+# Large training data exports (keep these ignored)
+data_exports/
+*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data exports (if any local CSV dumps from DB)
+data_exports/
