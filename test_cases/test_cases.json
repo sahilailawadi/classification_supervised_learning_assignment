@@ -12,7 +12,11 @@
       "max_pct_deviation_avg_rt": 0.0,
       "pct_txn_critical_error": 0.0,
       "pct_txn_degraded_error": 0.0,
-      "max_pct_deviation_error": 0.0,
+      "max_pct_deviation_error": 0.03679852805887764,
+      "pct_txn_with_errors": 0.3148148148148148,
+      "pct_txn_complete_failure": 0.0,
+      "max_error_percentage": 0.03679852805887764,
+      "has_100pct_failure_txn": 0.0,
       "throughput_per_user": 0.4420516658333847,
       "pct_deviation_throughput": 1.1127520362689824,
       "fail_ratio": 8.640695302611681e-07,
@@ -35,9 +39,13 @@
       "pct_txn_critical_avg_rt": 0.6111111111111112,
       "pct_txn_degraded_avg_rt": 0.018518518518518517,
       "max_pct_deviation_avg_rt": 256.93555974406655,
-      "pct_txn_critical_error": 0.0,
+      "pct_txn_critical_error": 0.018518518518518517,
       "pct_txn_degraded_error": 0.0,
-      "max_pct_deviation_error": 0.0,
+      "max_pct_deviation_error": 29.925241864555847,
+      "pct_txn_with_errors": 0.18518518518518517,
+      "pct_txn_complete_failure": 0.14814814814814814,
+      "max_error_percentage": 100.0,
+      "has_100pct_failure_txn": 1.0,
       "throughput_per_user": 0.2133885395370185,
       "pct_deviation_throughput": -0.045655210649377484,
       "fail_ratio": 0.001084932077781685,
@@ -47,7 +55,7 @@
     },
     "test_status_label": 0,
     "exit_code": 3,
-    "reason": "Fail \u2014 p95 critical on 33/54 txns (worst: +112316%); avg RT critical on 33/54 txns (worst: +25694%)"
+    "reason": "Fail \u2014 p95 critical on 33/54 txns (worst: +112316%); avg RT critical on 33/54 txns (worst: +25694%); error rate critical on 1/54 txns"
   },
   {
     "case_name": "Case 3: Throughput / Error Failure",
@@ -60,9 +68,13 @@
       "pct_txn_critical_avg_rt": 0.5806451612903226,
       "pct_txn_degraded_avg_rt": 0.04838709677419355,
       "max_pct_deviation_avg_rt": 8.76277696959925,
-      "pct_txn_critical_error": 0.0,
+      "pct_txn_critical_error": 0.3548387096774194,
       "pct_txn_degraded_error": 0.0,
-      "max_pct_deviation_error": 0.0,
+      "max_pct_deviation_error": 95.56924283611437,
+      "pct_txn_with_errors": 0.5645161290322581,
+      "pct_txn_complete_failure": 0.20967741935483872,
+      "max_error_percentage": 100.0,
+      "has_100pct_failure_txn": 1.0,
       "throughput_per_user": 0.13363647207312324,
       "pct_deviation_throughput": -0.40233308186609335,
       "fail_ratio": 0.3764294337794037,
@@ -72,6 +84,6 @@
     },
     "test_status_label": 0,
     "exit_code": 2,
-    "reason": "Fail \u2014 p95 critical on 23/62 txns (worst: +1206%); avg RT critical on 36/62 txns (worst: +876%); throughput_per_user 40% below baseline; fail_ratio=0.3764 (>1%)"
+    "reason": "Fail \u2014 p95 critical on 23/62 txns (worst: +1206%); avg RT critical on 36/62 txns (worst: +876%); error rate critical on 22/62 txns; throughput_per_user 40% below baseline; fail_ratio=0.3764 (>1%)"
   }
 ]

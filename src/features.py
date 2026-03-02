@@ -142,6 +142,28 @@ def _pct_deviation(actual, baseline):
     return (actual - baseline) / baseline
 
 
+def _pct_deviation_error(actual_error_pct, baseline_error_pct):
+    """
+    Special deviation calc for error rates (handles near-zero baselines).
+    
+    When baseline is near-zero (<0.1%), treat actual error as absolute deviation.
+    This ensures transactions with high error rates are flagged even when the
+    baseline is ~0% (most passing runs have no errors).
+    
+    Examples:
+        actual=30%, baseline=0% -> returns 30.0 (will be flagged as critical)
+        actual=15%, baseline=10% -> returns 0.5 (50% increase)
+    """
+    if pd.isna(actual_error_pct):
+        return 0.0
+    if pd.isna(baseline_error_pct) or baseline_error_pct < 0.1:
+        # Baseline essentially zero - use actual error as deviation
+        return actual_error_pct
+    else:
+        # Non-zero baseline - use percentage deviation
+        return (actual_error_pct - baseline_error_pct) / baseline_error_pct
+
+
 def add_deviation_features(df: pd.DataFrame, baselines: pd.DataFrame) -> pd.DataFrame:
     """
     Merge baselines and compute % deviation columns per transaction row.
@@ -182,7 +204,7 @@ def add_deviation_features(df: pd.DataFrame, baselines: pd.DataFrame) -> pd.Data
         lambda r: _pct_deviation(r["avg_response_time"], r["baseline_median_avg_rt"]), axis=1
     )
     df["pct_deviation_error_pct"] = df.apply(
-        lambda r: _pct_deviation(r["error_percentage"], r["baseline_median_error_pct"]), axis=1
+        lambda r: _pct_deviation_error(r["error_percentage"], r["baseline_median_error_pct"]), axis=1
     )
 
     return df
@@ -297,6 +319,22 @@ def aggregate_to_run_level(df: pd.DataFrame, baselines: pd.DataFrame) -> pd.Data
                 row[f"pct_txn_degraded_{prefix}"] = 0.0
                 row[f"max_pct_deviation_{prefix}"] = 0.0
 
+        # --- Per-transaction error metrics (NEW - use all transactions, not just with_baseline) ---
+        # These detect catastrophic failures like 100% error rate on individual transactions
+        all_txns = len(group)
+        if all_txns > 0:
+            row["pct_txn_with_errors"] = (group["error_percentage"] > 0).sum() / all_txns
+            row["pct_txn_complete_failure"] = (group["error_percentage"] == 100).sum() / all_txns
+            row["num_txn_complete_failure"] = (group["error_percentage"] == 100).sum()
+            row["max_error_percentage"] = group["error_percentage"].max()
+            row["has_100pct_failure_txn"] = 1 if row["num_txn_complete_failure"] > 0 else 0
+        else:
+            row["pct_txn_with_errors"] = 0.0
+            row["pct_txn_complete_failure"] = 0.0
+            row["num_txn_complete_failure"] = 0
+            row["max_error_percentage"] = 0.0
+            row["has_100pct_failure_txn"] = 0
+
         # --- Anomalous transactions (those without a baseline) ---
         without_baseline = group[~group["has_baseline"]]
         row["has_anomalous_transactions"] = 1 if len(without_baseline) > 0 else 0
@@ -330,6 +368,11 @@ MODEL_FEATURES = [
     "pct_txn_critical_error",
     "pct_txn_degraded_error",
     "max_pct_deviation_error",
+    # NEW: Per-transaction error metrics (detect catastrophic failures)
+    "pct_txn_with_errors",          # % transactions with any errors
+    "pct_txn_complete_failure",     # % transactions with 100% failure
+    "max_error_percentage",         # Worst absolute error rate (0-100)
+    "has_100pct_failure_txn",       # Binary flag for 100% failure on any txn
     "throughput_per_user",
     "pct_deviation_throughput",
     "fail_ratio",

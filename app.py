@@ -32,6 +32,11 @@ MODEL_FEATURES = [
     "pct_txn_critical_error",
     "pct_txn_degraded_error",
     "max_pct_deviation_error",
+    # NEW: Per-transaction error metrics (detect catastrophic failures)
+    "pct_txn_with_errors",
+    "pct_txn_complete_failure",
+    "max_error_percentage",
+    "has_100pct_failure_txn",
     "throughput_per_user",
     "pct_deviation_throughput",
     "fail_ratio",
@@ -50,6 +55,11 @@ FEATURE_DESCRIPTIONS = {
     "pct_txn_critical_error": "% transactions with error rate >10% above baseline",
     "pct_txn_degraded_error": "% transactions with error rate 5-10% above baseline",
     "max_pct_deviation_error": "Worst error rate deviation (ratio)",
+    # NEW: Per-transaction error features
+    "pct_txn_with_errors": "% transactions with any errors (>0%)",
+    "pct_txn_complete_failure": "% transactions with 100% failure (catastrophic)",
+    "max_error_percentage": "Worst absolute error rate across transactions (0-100)",
+    "has_100pct_failure_txn": "1 if any transaction had 100% failure",
     "throughput_per_user": "Requests per second per user",
     "pct_deviation_throughput": "Throughput deviation from baseline (negative = worse)",
     "fail_ratio": "Proportion of failed requests (0.0-1.0)",
