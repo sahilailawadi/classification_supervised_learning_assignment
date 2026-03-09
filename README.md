@@ -40,35 +40,13 @@ https://ailawadia3.streamlit.app/
 - 📈 View feature importance and model metrics
 - 🔧 **Manual Mode**: Enter custom feature values for "what-if" scenarios
 
-### Option 2: Interactive UI (Local)
+### Option 2: Command Line
 
-Launch the Streamlit web interface on your computer:
-
-```bash
-pip install streamlit
-streamlit run app.py
-```
-
-Then open your browser to `http://localhost:8501`
-
-**Features:**
-- 🎯 Select from 3 pre-computed test cases
-- 📊 View features in a nice table with critical values highlighted
-- 🤖 Click "Predict" button to see classification with confidence
-- 📈 View feature importance and model metrics
-- 🔧 **Manual Mode**: Enter custom feature values for "what-if" scenarios
-
-### Option 3: Command Line
-
-If you have Python 3.11+ with scikit-learn, pandas, numpy, and joblib:
+The following command can be run after setup is complete
 
 ```bash
 python3 -m src.predict
 ```
-
-**Expected Output**: Predictions on 3 test cases (1 pass, 2 fails) with confidence scores and explanations.
-
----
 
 ## Setup Instructions
 
@@ -107,6 +85,9 @@ pip install -r requirements.txt
 ```bash
 python3 -m src.predict
 ```
+
+**Expected Output**: Predictions on 3 test cases (1 pass, 2 fails) with confidence scores and explanations.
+
 
 ### Expected Output
 
@@ -250,21 +231,29 @@ python3 -m src.predict
 - Throughput 40% below baseline (system couldn't handle load)
 - **Model learned**: Combined signals (slow + errors + low throughput) = high confidence failure
 
-### Feature Interpretation Guide
+**MODEL_FEATURES (all normalized ratios/percentages):**
 
-| Feature | Meaning | Example Value | Interpretation |
-|---------|---------|---------------|----------------|
-| `pct_txn_critical_p95` | % of transactions with p95 >10% above baseline | 0.6111 | 61% of transactions critically slow |
-| `max_pct_deviation_p95` | Worst p95 deviation as ratio | 1123.1564 | Worst transaction 1,124x slower (baseline × 1124) |
-| `pct_txn_critical_avg_rt` | % of transactions with avg RT >10% above baseline | 0.5806 | 58% of transactions critically slow on average |
-| `pct_txn_with_errors` | % of transactions with any errors (>0%) | 0.1852 | 18.5% of transactions had at least 1 failed request |
-| `pct_txn_complete_failure` | % of transactions with 100% failure rate | 0.1481 | 14.8% of transactions had all requests fail (catastrophic) |
-| `max_error_percentage` | Worst absolute error rate across all transactions | 100.0 | At least 1 transaction had 100% of its requests fail |
-| `has_100pct_failure_txn` | Binary flag for catastrophic failure | 1.0 | 1 if any transaction had 100% failure, else 0 |
-| `fail_ratio` | Proportion of failed requests (global) | 0.3764 | 37.6% of all requests failed |
-| `pct_deviation_throughput` | Throughput deviation from baseline | -0.4023 | 40% below expected throughput |
-| `throughput_per_user` | Requests/second per user | 0.1336 | Each of 2000 users did 0.13 req/sec |
-| `test_type_encoded` | Test type | 0.0 | 0=load_test, 1=endurance, 2=experimental |
+| Feature | Meaning | Critical Threshold |
+|---------|---------|-------------------|
+| `pct_txn_critical_p95` | % of transactions with p95 >10% above baseline | >0 |
+| `pct_txn_degraded_p95` | % of transactions with p95 5-10% above baseline | >0.2 |
+| `max_pct_deviation_p95` | Worst p95 deviation as ratio (e.g., 1.2 = 120% above) | >0.10 |
+| `pct_txn_critical_avg_rt` | % of transactions with avg RT >10% above baseline | >0 |
+| `pct_txn_degraded_avg_rt` | % of transactions with avg RT 5-10% above baseline | >0.2 |
+| `max_pct_deviation_avg_rt` | Worst avg RT deviation as ratio | >0.10 |
+| `pct_txn_critical_error` | % of transactions with error rate >10% above baseline | >0 |
+| `pct_txn_degraded_error` | % of transactions with error rate 5-10% above baseline | >0.2 |
+| `max_pct_deviation_error` | Worst error rate deviation as ratio | >0.10 |
+| `pct_txn_with_errors` | % of transactions with any errors (>0% failure rate) | >0 |
+| `pct_txn_complete_failure` | % of transactions with 100% failure rate (catastrophic) | >0 |
+| `max_error_percentage` | Worst absolute error rate across all transactions (0-100) | >10 |
+| `has_100pct_failure_txn` | 1 if any transaction had 100% failure, else 0 | 1 |
+| `throughput_per_user` | Requests per second per user | N/A |
+| `pct_deviation_throughput` | Throughput deviation from baseline (negative = worse) | <-0.10 |
+| `fail_ratio` | Proportion of failed requests globally (0.0-1.0) | >0.01 |
+| `has_anomalous_transactions` | 1 if any transactions have no baseline, else 0 | 1 |
+| `num_transactions` | Count of unique transactions in test | N/A |
+| `test_type_encoded` | 0=load_test, 1=endurance, 2=experimental | N/A |
 
 **⚠️ Symbols** flag features exceeding critical thresholds (help identify problem areas).
 
@@ -323,9 +312,9 @@ pct_deviation_p95 = (actual_p95 - baseline_p95) / baseline_p95
 6. `max_pct_deviation_avg_rt` - Worst avg RT deviation across all transactions
 
 **Error Features (7):**
-7. `pct_txn_critical_error` - % txns with critical error rate deviation (>10% above baseline)
-8. `pct_txn_degraded_error` - % txns with degraded error rate deviation (5-10% above baseline)
-9. `max_pct_deviation_error` - Worst error rate deviation across all transactions
+7.  `pct_txn_critical_error` - % txns with critical error rate deviation (>10% above baseline)
+8.  `pct_txn_degraded_error` - % txns with degraded error rate deviation (5-10% above baseline)
+9.  `max_pct_deviation_error` - Worst error rate deviation across all transactions
 10. `pct_txn_with_errors` - % of transactions with any errors (>0% failure rate)
 11. `pct_txn_complete_failure` - % of transactions with 100% failure rate (catastrophic)
 12. `max_error_percentage` - Worst absolute error rate across all transactions (0-100)
@@ -468,72 +457,3 @@ RandomForestClassifier(
 
 ---
 
-## Limitations & Future Work
-
-**Current Limitations:**
-1. **Training data constraint**: Only 2000-user tests (709 runs)
-   - To generalize across user counts, need more diverse training data
-2. **Binary classification**: Pass/Fail only
-   - Could extend to multi-class (exit_code=1,2,3,4 separately)
-3. **Static baselines**: Computed once during training
-   - Could implement dynamic baseline updates as more passing runs accumulate
-4. **⚠️ Error feature bug**: Error deviations always return 0 when baseline ≈ 0%
-   - Impact: Model cannot detect per-transaction error rates
-   - Example: LoadTest_20230309T174858Z had 8 transactions with 100% failure, but `pct_txn_critical_error = 0.0`
-   - Fix documented in FINETUNING.md
-5. **⚠️ Global fail_ratio masks per-transaction failures**: 
-   - High-volume transactions with low errors mask 100% failures on low-volume transactions
-   - Example: 8 SignalR transactions with 100% failure showed `fail_ratio = 0.1%` globally
-   - Should add `has_100pct_failure_txn` feature for catastrophic failure detection
-
-**Future Enhancements:**
-1. **Fix error features** (Phase 2a - see FINETUNING.md Step 0)
-   - Use absolute error when baseline ≈ 0
-   - Add per-transaction error metrics (detect 100% failures)
-2. **Production label training** (Phase 2b - see FINETUNING.md Steps 1-5)
-   - Train on actual release decisions from `release_runs` table
-   - Learn when humans override automated criteria
-3. Multi-class classification (Pass, Fail-TPS, Fail-RT, Fail-Error)
-4. Confidence calibration (ensure 95% confidence truly means 95% accuracy)
-5. SHAP values for per-transaction explainability
-6. Real-time prediction API (integrate with CI/CD)
-7. Anomaly detection for novel transaction patterns
-
----
-
-## FAQ
-
-**Q: Why no raw data?**
-A: Assignment requirement states "send only the classifier and a few testing cases." The 700GB Postgres database contains proprietary production performance data.
-
-**Q: Can I add my own test cases?**
-A: Yes! Edit `test_cases/test_cases.json` with your own features array (must have all 15 features). Then run `python3 -m src.predict --test-cases test_cases/test_cases.json`.
-
-**Q: What if I want to see training code?**
-A: Full source code is in `src/` directory:
-- `extract.py` - Database queries (requires .env credentials)
-- `features.py` - Baseline computation & feature engineering
-- `train.py` - Model training & evaluation
-- `predict.py` - Prediction (works standalone)
-
-**Q: How long did training take?**
-A: ~30 seconds on MacBook Pro M1 (709 runs, 3 models, cross-validation, evaluation)
-
-**Q: Why Random Forest over Neural Network?**
-A: Interpretability - can inspect feature importance, requires less data, no GPU needed, comparable accuracy for tabular data.
-
----
-
-## Acknowledgments
-
-This supervised learning demonstration was developed for Drexel University INFO 629 using real production Locust performance test data from a large-scale web application spanning 2022-2026.
-
-**Assignment Objective**: Demonstrate supervised learning on real-world data without sharing proprietary raw data.
-
-**Result**: Trained classifier achieves 100% accuracy on 11 production sign-off decisions, packaged as standalone demo requiring no database access.
-
----
-
-## Contact
-
-For questions about this demonstration or methodology, contact the project author through Drexel University INFO 629 course channels.
