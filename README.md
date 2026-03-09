@@ -40,7 +40,22 @@ https://ailawadia3.streamlit.app/
 - 📈 View feature importance and model metrics
 - 🔧 **Manual Mode**: Enter custom feature values for "what-if" scenarios
 
-### Option 2: Command Line
+### Option 2: Jupyter Notebook Demo (Recommended for Professors!)
+
+**No installation needed if run in Google Colab or JupyterLab:**
+
+```bash
+jupyter notebook notebooks/predict_demo.ipynb
+```
+
+**What it does:**
+- Loads pre-trained model and 3 test cases
+- Runs predictions with confidence scores
+- Displays feature importance visualization
+- Shows confusion matrix from test set evaluation
+- **100% standalone** — no database required!
+
+### Option 3: Command Line
 
 The following command can be run after setup is complete
 
@@ -205,6 +220,35 @@ python3 -m src.predict
 ======================================================================
   3 test cases evaluated
 ======================================================================
+```
+
+---
+
+## Jupyter Notebooks (For Interactive Exploration)
+
+Three notebooks are included for different purposes:
+
+### 1. `predict_demo.ipynb` — Quick Prediction Demo ⭐
+**Recommended for professors and reviewers!**
+- Loads pre-trained model and runs predictions on 3 test cases
+- Shows confidence scores and feature explanations
+- Displays feature importance and confusion matrix
+- **No database required** — completely standalone
+
+### 2. `evaluation.ipynb` — Full Model Training & Evaluation
+- Runs complete training pipeline (extract → features → train)
+- Compares Decision Tree, Random Forest, and SVM
+- Generates confusion matrices, ROC curves, feature importance plots
+- **Requires database connection or pre-exported CSV**
+
+### 3. `eda.ipynb` — Exploratory Data Analysis
+- Analyzes class distribution, transaction patterns, feature distributions
+- Visualizes data quality and baseline computations
+- **Requires database connection or CSV samples**
+
+**To run notebooks:**
+```bash
+jupyter notebook notebooks/predict_demo.ipynb
 ```
 
 ---
