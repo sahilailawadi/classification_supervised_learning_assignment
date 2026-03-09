@@ -1,8 +1,8 @@
-# Performance Test Classification - Professor Deliverable
+# Performance Test Classification 
 
 **INFO 629 Assignment - Supervised Learning Demonstration**
 
-This package contains a trained Random Forest classifier that predicts Pass/Fail outcomes for Locust performance tests based on per-transaction metrics. No database connection or raw data required.
+This package contains a trained Random Forest classifier that predicts Pass/Fail outcomes for Locust performance tests based on per-transaction metrics (p95, error rates, throughput). No database connection or raw data required.
 
 ---
 
