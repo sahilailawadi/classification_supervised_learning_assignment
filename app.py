@@ -32,7 +32,6 @@ MODEL_FEATURES = [
     "pct_txn_critical_error",
     "pct_txn_degraded_error",
     "max_pct_deviation_error",
-    # NEW: Per-transaction error metrics (detect catastrophic failures)
     "pct_txn_with_errors",
     "pct_txn_complete_failure",
     "max_error_percentage",
@@ -55,7 +54,6 @@ FEATURE_DESCRIPTIONS = {
     "pct_txn_critical_error": "% transactions with error rate >10% above baseline",
     "pct_txn_degraded_error": "% transactions with error rate 5-10% above baseline",
     "max_pct_deviation_error": "Worst error rate deviation (ratio)",
-    # NEW: Per-transaction error features
     "pct_txn_with_errors": "% transactions with any errors (>0%)",
     "pct_txn_complete_failure": "% transactions with 100% failure (catastrophic)",
     "max_error_percentage": "Worst absolute error rate across transactions (0-100)",
@@ -293,12 +291,12 @@ def main():
     info_col1, info_col2, info_col3 = st.columns(3)
     
     with info_col1:
-        st.metric("Training Data", "709 runs")
+        st.metric("Training Data", "714 runs")
         st.caption("2000-user tests from 2022-2026")
     
     with info_col2:
-        st.metric("Test Accuracy", "97.2%")
-        st.caption("On 142 unseen test runs")
+        st.metric("Test Accuracy", "92.3%")
+        st.caption("On 143 unseen test runs")
     
     with info_col3:
         st.metric("Sign-off Accuracy", "100%")

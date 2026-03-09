@@ -2,7 +2,7 @@
 
 **INFO 629 Assignment - Supervised Learning Demonstration**
 
-This package contains a trained Random Forest classifier that predicts Pass/Fail outcomes for Locust performance tests based on per-transaction metrics (p95, error rates, throughput). No database connection or raw data required.
+This package contains a trained Random Forest classifier that predicts Pass/Fail outcomes for performance tests based on per-transaction metrics (p95, error rates, throughput). This model improves upon the aggregated exit criteria and introduces per transaction , granular evaluation of performance tests, thus reducing manual effort in evaluating test results and certifying a given release for production release.
 
 ---
 
@@ -48,12 +48,15 @@ https://ailawadia3.streamlit.app/
 jupyter notebook notebooks/predict_demo.ipynb
 ```
 
+online url : https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD
+
+
 **What it does:**
 - Loads pre-trained model and 3 test cases
 - Runs predictions with confidence scores
 - Displays feature importance visualization
 - Shows confusion matrix from test set evaluation
-- **100% standalone** — no database required!
+
 
 ### Option 3: Command Line
 
