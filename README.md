@@ -9,16 +9,27 @@ This package contains a trained Random Forest classifier that predicts Pass/Fail
 ## What's Included
 
 ```
-deliverable/
-├── models/
-│   ├── model.pkl           # Trained Random Forest (709 runs, 100% accuracy on sign-offs)
-│   ├── scaler.pkl          # StandardScaler for 19 normalized features
-│   └── baselines.pkl       # Per-transaction baseline medians
-├── test_cases/
-│   └── test_cases.json     # 3 representative test cases with features & labels
+A3_Code/
 ├── src/
-│   └── predict.py          # Standalone prediction script
-└── README.md     # This file
+│   ├── extract.py          # Database extraction & validation queries - Needs DB
+│   ├── features.py         # Baseline computation & feature engineering - Needs DB
+│   ├── train.py            # Model training, evaluation, export - Needs DB
+│   └── predict.py          # ⭐ Standalone prediction script (deliverable) - No DB required
+├── models/
+│   ├── model.pkl           # Trained Random Forest classifier (deliverable)
+│   ├── scaler.pkl          # StandardScaler for 19 normalized features (deliverable)
+│   ├── baselines.pkl       # Per-transaction baseline medians (deliverable)
+│   └── metrics.json        # Model performance metrics (deliverable)
+├── test_cases/
+│   └── test_cases.json     # 3 representative test cases (deliverable)
+├── notebooks/
+│   ├── predict_demo.ipynb  # ⭐ Quick demo (deliverable) - No DB required
+│   ├── evaluation.ipynb    # Full training pipeline & model comparison - Needs DB
+│   └── eda.ipynb           # Exploratory data analysis - Needs DB
+├── app.py                  # Streamlit web interface - No DB required
+├── requirements.txt        # Python dependencies
+├── .env                    # Database credentials (not in repo)
+└── README.md               # This file
 ```
 
 ---
@@ -40,22 +51,33 @@ https://ailawadia3.streamlit.app/
 - 📈 View feature importance and model metrics
 - 🔧 **Manual Mode**: Enter custom feature values for "what-if" scenarios
 
-### Option 2: Jupyter Notebook Demo (Recommended for Professors!)
+### Option 2: Jupyter Notebook Demo
 
-**No installation needed if run in Google Colab or JupyterLab:**
+**🌐 Run online - Zero installation required!**
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sahilailawadi/classification_supervised_learning_assignment/blob/main/notebooks/predict_demo.ipynb) **← Click to open in Google Colab**
+
+**Alternative:** [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD?labpath=notebooks%2Fpredict_demo.ipynb)
+
+**Or run locally:**
 
 ```bash
 jupyter notebook notebooks/predict_demo.ipynb
 ```
 
-online url : https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD
+**Why this notebook?**
+- ✅ **Completely standalone** — No database connection required!
+- ✅ **Zero setup** — Automatically clones repo and loads all artifacts on Colab
+- ✅ **Quick demonstration** — Runs in ~30 seconds
+- ✅ **Comprehensive** — Shows model performance, predictions, and visualizations
 
-
-**What it does:**
-- Loads pre-trained model and 3 test cases
-- Runs predictions with confidence scores
-- Displays feature importance visualization
-- Shows confusion matrix from test set evaluation
+**What it demonstrates:**
+- 📊 **Model Performance Comparison** — Tabular view of Decision Tree, Random Forest, and SVM metrics
+- 🤖 **Live Predictions** — Runs on 3 representative test cases (clean pass, RT failure, error failure)
+- 🎯 **Confidence Scores** — Shows prediction confidence with detailed explanations
+- 🔑 **Feature Analysis** — Displays key features with ⚠️ warnings for critical values
+- 📈 **Visualizations** — Feature importance bar chart and confusion matrix
+- 📋 **Summary Statistics** — Accuracy, confidence ranges across test cases
 
 
 ### Option 3: Command Line
@@ -232,26 +254,65 @@ python3 -m src.predict
 Three notebooks are included for different purposes:
 
 ### 1. `predict_demo.ipynb` — Quick Prediction Demo ⭐
-**Recommended for professors and reviewers!**
-- Loads pre-trained model and runs predictions on 3 test cases
-- Shows confidence scores and feature explanations
-- Displays feature importance and confusion matrix
-- **No database required** — completely standalone
+**⭐ RECOMMENDED FOR PROFESSORS AND REVIEWERS! ⭐**
+
+This is the **fastest way** to see the model in action without any setup!
+
+**Run it:**
+```bash
+jupyter notebook notebooks/predict_demo.ipynb
+```
+
+**Or use MyBinder (online, no install):** https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD
+
+**What's inside (7 self-contained sections):**
+
+1. **📦 Import Libraries** — Setup pandas, scikit-learn, matplotlib, seaborn
+2. **🔧 Load Artifacts** — Load pre-trained model, scaler, metrics, and test cases
+3. **📊 Model Comparison Table** — Side-by-side metrics for all 3 models (Decision Tree, Random Forest, SVM)
+4. **🤖 Run Predictions** — Predict Pass/Fail on 3 representative test cases
+5. **📋 Display Results** — Show predictions with confidence, actual labels, and key feature values
+6. **📈 Feature Importance** — Horizontal bar chart showing which features matter most
+7. **🎯 Confusion Matrix** — Visualize model performance on 143 test runs
+
+**Key Features:**
+- ✅ **No database connection required** — All data included in `models/` and `test_cases/`
+- ✅ **Runs in ~30 seconds** — Perfect for quick demonstrations
+- ✅ **Rich visualizations** — Matplotlib/Seaborn plots with clear labels
+- ✅ **Educational** — Explains each prediction with reason and critical feature flags (⚠️)
+
+**Test Cases Demonstrated:**
+- **Case 1: Clean Pass** — All 54 transactions within baseline (97% confidence)
+- **Case 2: Response Time Failure** — 61% of transactions critically slow (75% confidence)
+- **Case 3: Throughput/Error Failure** — 37.6% request failure rate (99% confidence)
+
+---
 
 ### 2. `evaluation.ipynb` — Full Model Training & Evaluation
+**For those interested in the complete ML pipeline:**
 - Runs complete training pipeline (extract → features → train)
 - Compares Decision Tree, Random Forest, and SVM
 - Generates confusion matrices, ROC curves, feature importance plots
+- Hyperparameter tuning with cross-validation
 - **Requires database connection or pre-exported CSV**
 
+**Run it:**
+```bash
+jupyter notebook notebooks/evaluation.ipynb
+```
+
+---
+
 ### 3. `eda.ipynb` — Exploratory Data Analysis
+**For understanding the raw data and feature engineering:**
 - Analyzes class distribution, transaction patterns, feature distributions
 - Visualizes data quality and baseline computations
+- Shows correlation heatmaps and outlier detection
 - **Requires database connection or CSV samples**
 
-**To run notebooks:**
+**Run it:**
 ```bash
-jupyter notebook notebooks/predict_demo.ipynb
+jupyter notebook notebooks/eda.ipynb
 ```
 
 ---

@@ -5,6 +5,7 @@ INFO 629 Assignment - Supervised Learning
 Run: streamlit run app.py
 """
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,6 +14,9 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
+
+# Get project root directory (where app.py is located)
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Page config
 st.set_page_config(
@@ -70,15 +74,18 @@ FEATURE_DESCRIPTIONS = {
 @st.cache_resource
 def load_model():
     """Load trained model and scaler."""
-    model = joblib.load("models/model.pkl")
-    scaler = joblib.load("models/scaler.pkl")
+    model_path = os.path.join(PROJECT_ROOT, "models", "model.pkl")
+    scaler_path = os.path.join(PROJECT_ROOT, "models", "scaler.pkl")
+    model = joblib.load(model_path)
+    scaler = joblib.load(scaler_path)
     return model, scaler
 
 
 @st.cache_data
 def load_test_cases():
     """Load test cases from JSON."""
-    with open("test_cases/test_cases.json", "r") as f:
+    test_cases_path = os.path.join(PROJECT_ROOT, "test_cases", "test_cases.json")
+    with open(test_cases_path, "r") as f:
         return json.load(f)
 
 

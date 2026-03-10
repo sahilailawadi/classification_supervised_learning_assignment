@@ -43,8 +43,10 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # Config
 # ---------------------------------------------------------------------------
 
-MODELS_DIR = "models"
-TEST_CASES_DIR = "test_cases"
+# Get project root directory (parent of src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+TEST_CASES_DIR = os.path.join(PROJECT_ROOT, "test_cases")
 RANDOM_STATE = 42
 TEST_SIZE = 0.20
 

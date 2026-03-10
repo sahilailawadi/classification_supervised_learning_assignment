@@ -19,6 +19,9 @@ import numpy as np
 import pandas as pd
 import joblib
 
+# Get project root directory (parent of src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Feature list must match training (from features.py)
 MODEL_FEATURES = [
     "pct_txn_critical_p95",
@@ -317,11 +320,13 @@ def main():
         description="Run predictions on test cases using the trained model"
     )
     parser.add_argument(
-        "--test-cases", type=str, default="test_cases/test_cases.json",
+        "--test-cases", type=str, 
+        default=os.path.join(PROJECT_ROOT, "test_cases", "test_cases.json"),
         help="Path to test cases JSON file"
     )
     parser.add_argument(
-        "--models-dir", type=str, default="models",
+        "--models-dir", type=str, 
+        default=os.path.join(PROJECT_ROOT, "models"),
         help="Directory containing model.pkl and scaler.pkl"
     )
     parser.add_argument(
