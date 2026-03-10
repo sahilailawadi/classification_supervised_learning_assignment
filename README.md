@@ -55,9 +55,7 @@ https://ailawadia3.streamlit.app/
 
 **🌐 Run online - Zero installation required!**
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sahilailawadi/classification_supervised_learning_assignment/blob/main/notebooks/predict_demo.ipynb) **← Click to open in Google Colab**
-
-**Alternative:** [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD?labpath=notebooks%2Fpredict_demo.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD?labpath=notebooks%2Fpredict_demo.ipynb) **← Click to open in MyBinder**
 
 **Or run locally:**
 
@@ -67,7 +65,7 @@ jupyter notebook notebooks/predict_demo.ipynb
 
 **Why this notebook?**
 - ✅ **Completely standalone** — No database connection required!
-- ✅ **Zero setup** — Automatically clones repo and loads all artifacts on Colab
+- ✅ **Zero setup** — All artifacts pre-loaded (model.pkl, scaler.pkl, test_cases.json)
 - ✅ **Quick demonstration** — Runs in ~30 seconds
 - ✅ **Comprehensive** — Shows model performance, predictions, and visualizations
 
