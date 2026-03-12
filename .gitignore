@@ -28,3 +28,7 @@ Thumbs.db
 
 # Data exports (if any local CSV dumps from DB)
 data_exports/
+
+# Local files (anonymization mappings, credentials)
+local/
+.anonymization_map.json
