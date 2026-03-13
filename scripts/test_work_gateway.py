@@ -14,10 +14,14 @@ Usage:
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load environment variables from .env file
+load_dotenv(PROJECT_ROOT / '.env')
 
 from src.llm_provider import WorkGatewayProvider
 
