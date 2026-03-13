@@ -7,6 +7,8 @@ Supports two modes:
 """
 
 import os
+import time
+import requests
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -130,35 +132,51 @@ class OpenAIProvider(BaseLLMProvider):
 
 class WorkGatewayProvider(BaseLLMProvider):
     """
-    Work LLM Gateway provider for enterprise environments.
+    Work LLM Gateway provider for enterprise environments with OAuth.
     
-    Supports OpenAI-compatible APIs and custom authentication patterns.
+    Supports OAuth token flow:
+    1. Fetch bearer token from SAT OAuth endpoint
+    2. Use token to authenticate LLM gateway requests
+    3. Cache token until expiration
+    
     Configure via environment variables:
     - WORK_LLM_ENDPOINT: Gateway base URL
-    - WORK_LLM_API_KEY: Authentication key (if required)
     - WORK_LLM_MODEL: Model identifier
+    - SAT_OAUTH_URL: OAuth token endpoint
+    - SAT_CLIENT_ID: OAuth client ID
+    - SAT_CLIENT_SECRET: OAuth client secret
+    - SAT_GRANT_TYPE: OAuth grant type (usually "client_credentials")
     """
     
     def __init__(
         self,
         endpoint: Optional[str] = None,
-        api_key: Optional[str] = None,
         model: Optional[str] = None,
-        auth_header: str = "Authorization"
+        oauth_url: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        grant_type: Optional[str] = None
     ):
         """
-        Initialize work gateway provider.
+        Initialize work gateway provider with OAuth.
         
         Args:
-            endpoint: Gateway base URL (e.g., "https://llm-gateway.company.com")
-            api_key: Authentication key
+            endpoint: Gateway base URL
             model: Model identifier on the gateway
-            auth_header: Header name for authentication (default: "Authorization")
+            oauth_url: SAT OAuth token endpoint
+            client_id: OAuth client ID
+            client_secret: OAuth client secret
+            grant_type: OAuth grant type
         """
         # Environment variable fallbacks
         self.endpoint = endpoint or os.getenv('WORK_LLM_ENDPOINT')
-        self.api_key = api_key or os.getenv('WORK_LLM_API_KEY')
-        model = model or os.getenv('WORK_LLM_MODEL', 'default')
+        model = model or os.getenv('WORK_LLM_MODEL', 'gpt-4')
+        
+        # OAuth configuration
+        self.oauth_url = oauth_url or os.getenv('SAT_OAUTH_URL')
+        self.client_id = client_id or os.getenv('SAT_CLIENT_ID')
+        self.client_secret = client_secret or os.getenv('SAT_CLIENT_SECRET')
+        self.grant_type = grant_type or os.getenv('SAT_GRANT_TYPE', 'client_credentials')
         
         super().__init__(model)
         
@@ -168,49 +186,134 @@ class WorkGatewayProvider(BaseLLMProvider):
                 "variable or pass endpoint parameter."
             )
         
-        self.auth_header = auth_header
+        if not self.oauth_url or not self.client_id or not self.client_secret:
+            raise ValueError(
+                "OAuth configuration required. Set SAT_OAUTH_URL, SAT_CLIENT_ID, and "
+                "SAT_CLIENT_SECRET environment variables."
+            )
         
-        # Initialize OpenAI client with custom base URL (for OpenAI-compatible gateways)
-        if self.api_key:
-            self.client = openai.OpenAI(
-                base_url=self.endpoint,
-                api_key=self.api_key
+        # Token cache
+        self._token = None
+        self._token_expires_at = 0
+    
+    def _get_oauth_token(self) -> str:
+        """
+        Fetch OAuth bearer token from SAT endpoint.
+        
+        Returns:
+            Bearer token string
+            
+        Raises:
+            RuntimeError: If token fetch fails
+        """
+        # Check if cached token is still valid
+        if self._token and time.time() < self._token_expires_at:
+            return self._token
+        
+        # Fetch new token
+        try:
+            response = requests.post(
+                self.oauth_url,
+                data={
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
+                    'grant_type': self.grant_type
+                },
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=10
             )
-        else:
-            # No auth required (internal network, etc.)
-            self.client = openai.OpenAI(
-                base_url=self.endpoint,
-                api_key="not-needed"  # Some gateways ignore this
-            )
+            response.raise_for_status()
+            
+            token_data = response.json()
+            self._token = token_data.get('access_token')
+            
+            if not self._token:
+                raise RuntimeError("No access_token in OAuth response")
+            
+            # Cache token with 5 minute buffer before expiration
+            expires_in = token_data.get('expires_in', 3600)  # Default 1 hour
+            self._token_expires_at = time.time() + expires_in - 300
+            
+            return self._token
+            
+        except requests.RequestException as e:
+            raise RuntimeError(f"Failed to fetch OAuth token: {e}") from e
     
     def chat(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        stream: bool = False
     ) -> LLMResponse:
-        """Send chat completion to work gateway."""
+        """
+        Send chat completion to work gateway.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature (0.0 to 1.0)
+            max_tokens: Maximum tokens to generate
+            stream: Whether to stream the response (not yet implemented)
+            
+        Returns:
+            LLMResponse with standardized fields
+        """
+        # Get OAuth token
+        token = self._get_oauth_token()
+        
+        # Build request
+        url = self.endpoint.rstrip('/') + '/chat/completions'
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'model': self.model,
+            'messages': messages,
+            'temperature': temperature,
+            'stream': stream
+        }
+        
+        if max_tokens:
+            payload['max_tokens'] = max_tokens
+        
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=60
             )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Parse OpenAI-compatible response
+            choice = data.get('choices', [{}])[0]
+            message = choice.get('message', {})
+            usage = data.get('usage', {})
             
             return LLMResponse(
-                content=response.choices[0].message.content,
-                model=response.model,
-                tokens_used=response.usage.total_tokens if response.usage else None,
-                finish_reason=response.choices[0].finish_reason,
-                raw_response=response
+                content=message.get('content', ''),
+                model=data.get('model', self.model),
+                tokens_used=usage.get('total_tokens'),
+                finish_reason=choice.get('finish_reason'),
+                raw_response=data
             )
-        except Exception as e:
+            
+        except requests.RequestException as e:
             raise RuntimeError(f"Work LLM gateway error: {e}") from e
     
     def validate_connection(self) -> bool:
         """Test work gateway connection."""
         try:
+            # Test OAuth token fetch
+            token = self._get_oauth_token()
+            if not token:
+                return False
+            
+            # Test minimal chat request
             response = self.chat(
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5

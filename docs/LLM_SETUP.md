@@ -64,34 +64,35 @@ print(f"Tokens used: {response.tokens_used}")
 
 ## Work Gateway Provider Details
 
-The `WorkGatewayProvider` is designed to work with OpenAI-compatible enterprise gateways. It supports:
+The `WorkGatewayProvider` is designed to work with enterprise LLM gateways that use OAuth authentication. It supports:
 
-- **Custom endpoints**: Any base URL
-- **Flexible authentication**: API keys via header
-- **Multiple models**: Configurable model selection
+- **OAuth token flow**: Fetches bearer tokens from SAT OAuth endpoint
+- **Token caching**: Reuses tokens until expiration (with 5-min buffer)
+- **Custom endpoints**: Any OpenAI-compatible gateway URL
 - **Standard format**: Uses OpenAI chat completion format
 
-### Common Gateway Patterns
+### OAuth Flow
 
-**Pattern 1: OpenAI-Compatible (Most Common)**
+1. Request token from SAT OAuth endpoint with client credentials
+2. Cache token until expiration
+3. Use token as Bearer authentication for LLM requests
+4. Auto-refresh when token expires
+
+### Comcast Configuration
+
 ```bash
-WORK_LLM_ENDPOINT=https://llm-gateway.company.com/v1
-WORK_LLM_API_KEY=your_token
+# Set mode to work
+LLM_MODE=work
+
+# LLM Gateway endpoint
+WORK_LLM_ENDPOINT=https://api.context.flow.cnap.comcast.net/modelgw/models/openai/v1
 WORK_LLM_MODEL=gpt-4
-```
 
-**Pattern 2: Internal Gateway (No Auth)**
-```bash
-WORK_LLM_ENDPOINT=http://internal-llm.company.local/v1
-# WORK_LLM_API_KEY not needed
-WORK_LLM_MODEL=default
-```
-
-**Pattern 3: Azure OpenAI-style**
-```bash
-WORK_LLM_ENDPOINT=https://your-resource.openai.azure.com
-WORK_LLM_API_KEY=your_azure_key
-WORK_LLM_MODEL=gpt-4
+# SAT OAuth credentials (get these from your team)
+SAT_OAUTH_URL=https://sat-prod.codebig2.net/v2/oauth/token
+SAT_CLIENT_ID=your-client-id-here
+SAT_CLIENT_SECRET=your-client-secret-here
+SAT_GRANT_TYPE=client_credentials
 ```
 
 ## What to Configure for Comcast

@@ -24,6 +24,7 @@ ipykernel>=6.0.0
 openai>=1.0.0
 ollama>=0.1.0
 openpyxl>=3.1.0
+requests>=2.31.0
 
 # UI (optional - for Streamlit demo)
 streamlit>=1.30.0
