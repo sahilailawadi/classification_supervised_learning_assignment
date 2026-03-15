@@ -538,3 +538,135 @@ Use tables and bullet points for clarity."""
         lines.append("*This data includes ALL transactions from the actual test run.*")
         
         return "\n".join(lines)
+    
+    def ask(
+        self,
+        question: str,
+        about_test=None,
+        data_context=None,
+        conversation_history: Optional[List[tuple]] = None
+    ) -> Dict[str, Any]:
+        """
+        Universal method to ask LLM questions about test data.
+        
+        This is the main interface - handles all query types in one method:
+        - Specific test questions (provide about_test)
+        - Custom data questions (provide data_context)  
+        - General dataset questions (provide neither)
+        
+        Args:
+            question: Your question in natural language
+            about_test: Optional test ID/index for test-specific questions
+            data_context: Optional pre-formatted data (DataFrame.to_string(), etc.)
+            conversation_history: Optional list of (question, answer) tuples
+            
+        Returns:
+            Dict with 'answer' (str) and 'tokens_used' (int or None)
+            
+        Examples:
+            # Ask about specific test
+            result = analyzer.ask("What are the slowest transactions?", about_test=0)
+            print(result['answer'])
+            
+            # Ask about custom data (e.g., "last 3 tests")
+            last_3 = df.groupby('testplan').agg({
+                'end_time': 'first',
+                'exit_code': 'first'
+            }).sort_values('end_time', ascending=False).head(3)
+            result = analyzer.ask(
+                "What are the last 3 test runs?",
+                data_context=last_3.to_string()
+            )
+            
+            # General question (includes dataset overview)
+            result = analyzer.ask("What's the overall pass rate?")
+        """
+        # Determine what context to provide
+        if about_test is not None:
+            # User wants to ask about a specific test
+            context = self.get_test_context(about_test)
+        elif data_context is not None:
+            # User provided custom data context
+            context = data_context
+        else:
+            # General question - provide dataset overview
+            df = self.data_source.load_test_data()
+            context = f"""Dataset Overview:
+- Total tests: {df['testplan'].nunique()}
+- Total transactions/rows: {len(df):,}
+- Unique transaction types: {df['transaction_name'].nunique()}
+- Date range: {df['end_time'].min()} to {df['end_time'].max()}
+- Pass/Fail distribution: {df.groupby('exit_code')['testplan'].nunique().to_dict()}
+
+Available transaction types:
+{', '.join(df['transaction_name'].unique()[:20])}{'...' if df['transaction_name'].nunique() > 20 else ''}"""
+    
+        # Ask LLM with the context
+        return self.ask_about_data(context, question, conversation_history)
+    
+    def ask_about_data(
+        self,
+        data_context: str,
+        question: str,
+        conversation_history: Optional[List[tuple]] = None
+    ) -> Dict[str, Any]:
+        """
+        Ask LLM a question with provided data context.
+        
+        This is a general-purpose method for querying the LLM with any data.
+        Use this when you have pandas query results, aggregations, or custom
+        data that you want the LLM to interpret or answer questions about.
+        
+        Args:
+            data_context: Formatted data (can include pandas output, tables, stats)
+            question: Your question about the data
+            conversation_history: Optional list of (question, answer) tuples for context
+            
+        Returns:
+            Dict with 'answer' (str) and 'tokens_used' (int or None)
+            
+        Example:
+            # Get last 3 tests
+            df = analyzer.data_source.load_test_data()
+            last_3 = df.groupby('testplan').agg({
+                'end_time': 'first',
+                'exit_code': 'first'
+            }).sort_values('end_time', ascending=False).head(3)
+            
+            # Ask LLM about them
+            result = analyzer.ask_about_data(
+                data_context=f"Last 3 test runs:\\n{last_3.to_string()}",
+                question="What patterns do you see in these tests?"
+            )
+            print(result['answer'])
+        """
+        # Build system prompt
+        system_prompt = """You are an expert performance test analyst.
+
+Answer questions about the provided test data. Be concise but informative.
+Use bullet points for clarity. Highlight key insights and patterns.
+When data is provided, reference specific values and trends from that data."""
+        
+        # Build messages array
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history if provided (last 5 exchanges)
+        if conversation_history:
+            for prev_q, prev_a in conversation_history[-5:]:
+                messages.append({"role": "user", "content": prev_q})
+                messages.append({"role": "assistant", "content": prev_a})
+        
+        # Add current question with data context
+        full_prompt = f"{data_context}\n\n---\n\n**Question:** {question}"
+        messages.append({"role": "user", "content": full_prompt})
+        
+        # Query LLM
+        response = self.llm.chat(
+            messages=messages,
+            temperature=0.7
+        )
+        
+        return {
+            'answer': response.content,
+            'tokens_used': response.tokens_used
+        }

@@ -122,23 +122,43 @@ def ask_about_test(testplan_or_index, question: str):
         
     Returns:
         Tuple of (answer, tokens_used)
-        
-    Example:
-        answer, tokens = ask_about_test(0, "What are the slowest transactions?")
-        answer, tokens = ask_about_test("LoadTest_20260304T060726Z", "Why did this fail?")
     """
     analyzer = st.session_state.analyzer
+    conversation_history = st.session_state.conversation_history
     
     try:
-        # Get detailed test context with real data
-        test_context = analyzer.get_test_context(testplan_or_index)
-        
-        # Build full prompt with test details
-        full_question = f"{test_context}\n\n---\n\n**Question:** {question}"
-        
-        # Use the regular ask function with conversation history
-        return ask_llm_question(full_question, context="")
+        # Use unified ask() method
+        result = analyzer.ask(
+            question,
+            about_test=testplan_or_index,
+            conversation_history=conversation_history
+        )
+        return result['answer'], result['tokens_used']
+    except Exception as e:
+        return f"❌ Error: {e}", 0
+
+def ask_with_data(data_context: str, question: str):
+    """
+    Ask LLM to interpret any data (pandas results, aggregations, etc.).
     
+    Args:
+        data_context: Formatted data (DataFrame.to_string(), custom text, etc.)
+        question: Your question about the data
+        
+    Returns:
+        Tuple of (answer, tokens_used)
+    """
+    analyzer = st.session_state.analyzer
+    conversation_history = st.session_state.conversation_history
+    
+    try:
+        # Use unified ask() method
+        result = analyzer.ask(
+            question,
+            data_context=data_context,
+            conversation_history=conversation_history
+        )
+        return result['answer'], result['tokens_used']
     except Exception as e:
         return f"❌ Error: {e}", 0
 
