@@ -69,15 +69,17 @@ def initialize_system():
     return True
 
 def ask_llm_question(question: str, context: str = ""):
-    """Send question to LLM and get response"""
+    """Send question to LLM and get response with conversation history"""
     analyzer = st.session_state.analyzer
     df = st.session_state.df
+    conversation_history = st.session_state.conversation_history
     
     # Build context
     system_prompt = """You are an expert performance test analyst. 
     
 Answer questions about test results, trends, and patterns. Be concise but informative.
-Use bullet points and highlight key insights. Format numbers clearly."""
+Use bullet points and highlight key insights. Format numbers clearly.
+Maintain conversation context and reference previous questions when relevant."""
 
     context_parts = [
         f"Dataset: {df['testplan'].nunique()} tests, {len(df):,} transactions",
@@ -88,15 +90,22 @@ Use bullet points and highlight key insights. Format numbers clearly."""
     if context:
         context_parts.append(f"\nAdditional context:\n{context}")
     
-    user_prompt = "\n".join(context_parts) + f"\n\nQuestion: {question}"
+    # Build messages with conversation history
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add conversation history (last 5 exchanges to keep context manageable)
+    for prev_q, prev_a in conversation_history[-5:]:
+        messages.append({"role": "user", "content": prev_q})
+        messages.append({"role": "assistant", "content": prev_a})
+    
+    # Add current question with dataset context
+    current_prompt = "\n".join(context_parts) + f"\n\nQuestion: {question}"
+    messages.append({"role": "user", "content": current_prompt})
     
     # Query LLM
     try:
         response = analyzer.llm.chat(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             temperature=0.7
         )
         return response.content, response.tokens_used
