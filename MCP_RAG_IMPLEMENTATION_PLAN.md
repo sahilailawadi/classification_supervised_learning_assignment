@@ -296,6 +296,166 @@ test_vector = embed({
 
 ## Implementation Phases
 
+### Evolution Strategy: From Helper Function to Full MCP
+
+This section documents a pragmatic, incremental migration path from the current immediate fix to a full MCP+RAG implementation.
+
+#### Phase 1: Immediate Fix (Completed - 30 minutes)
+
+**Problem**: LLM hallucinates transaction names when asked about specific tests ("Type 1, Type 2, Type 3") because `ask_question()` only provides general dataset statistics, not test-specific data.
+
+**Solution**: Add `ask_about_test()` helper function that fetches real test data before sending to LLM.
+
+**Implementation**: 
+- ✅ Added to `notebooks/llm_analysis_demo.ipynb`
+- Function accepts test index (0-713) or testplan ID string
+- Fetches actual transaction data from dataframe
+- Builds context with real P95 values, transaction names, error rates
+- Sends enriched context to LLM
+- Prevents hallucination by providing real data
+
+**Usage Examples**:
+```python
+# By index
+ask_about_test(0, "What are the slowest transactions?")
+
+# By testplan ID
+ask_about_test("LoadTest_20260304T060726Z", "Why did this test fail?")
+```
+
+**Benefits**:
+- ✅ Immediate fix - no infrastructure changes needed
+- ✅ Works in both academic and work modes
+- ✅ Clear, predictable behavior
+- ✅ Easy to understand and debug
+
+**Limitations**:
+- ❌ Manual function call required (not autonomous)
+- ❌ No semantic search across tests
+- ❌ Limited to single test analysis
+- ❌ No comparison or trending capabilities
+
+---
+
+#### Phase 2: MCP Wrapper (During MCP Implementation - 1 hour)
+
+**Goal**: Keep helper function interface, migrate internals to use MCP tools.
+
+**Strategy**: Gradual migration without breaking existing usage patterns.
+
+**Implementation**:
+```python
+# Update helper to call MCP tools internally
+def ask_about_test(test_id_or_index, question):
+    """
+    Same interface, now powered by MCP tools.
+    Users don't need to change their code.
+    """
+    # Get testplan ID
+    if isinstance(test_id_or_index, int):
+        testplan = df.iloc[test_id_or_index]["testplan"]
+    else:
+        testplan = test_id_or_index
+    
+    # NEW: Call MCP tool instead of pandas query
+    from mcp_client import mcp_session
+    test_detail = await mcp_session.call_tool(
+        "get_test_detail",
+        {"testplan": testplan, "include_transactions": True}
+    )
+    
+    # Build context (same as Phase 1)
+    context = format_test_context(test_detail)
+    
+    # Ask LLM (same as Phase 1)
+    return ask_question(f"{context}\n\nQuestion: {question}")
+```
+
+**Benefits**:
+- ✅ No user-facing changes (backward compatible)
+- ✅ Backend now uses MCP infrastructure
+- ✅ Can leverage MCP caching, auth, logging
+- ✅ Easier to add more MCP tools later
+
+**Migration Path**:
+1. Implement MCP server with `get_test_detail` tool (Phase 0-1 below)
+2. Update `ask_about_test()` internals to call MCP
+3. Test both paths work identically
+4. Deprecate direct pandas queries
+
+---
+
+#### Phase 3: Pure MCP (After MCP Stable - Deprecate Helper)
+
+**Goal**: LLM autonomously decides which MCP tools to use. No helper function needed.
+
+**Strategy**: Natural language → LLM tool use → autonomous data fetching.
+
+**Implementation**: User just asks natural language questions, LLM calls tools:
+
+```python
+# User asks (no helper function call):
+ask_question("What are the transactions in test #714?")
+
+# LLM autonomously:
+# 1. Recognizes need for test-specific data
+# 2. Calls MCP tool: get_test_detail(testplan="LoadTest_20260304T060726Z")
+# 3. Receives real transaction data
+# 4. Generates answer with actual names
+```
+
+**LLM Reasoning** (with MCP tool awareness):
+```
+User wants test #714 transactions. I need to:
+1. Get the testplan ID for test #714
+2. Call get_test_detail tool
+3. Extract transaction list from response
+4. Answer with real data
+```
+
+**Benefits**:
+- ✅ Fully autonomous - no manual tool selection
+- ✅ LLM can chain multiple tools (search → detail → compare)
+- ✅ Semantic search enables "find similar failures"
+- ✅ Trending analysis via `get_test_trends` tool
+- ✅ Most powerful: LLM adapts to question complexity
+
+**New Capabilities** (only possible in Phase 3):
+- "Find tests similar to #714" → semantic_search tool
+- "Compare test #714 to #820" → compare_tests tool
+- "Has authentication P95 been increasing?" → get_test_trends tool
+- "Explain why test #714 failed" → explain_failure tool (uses classifier + similar tests)
+
+**User Experience**:
+```python
+# Phase 1 (now): Manual helper call
+ask_about_test(714, "What are the slowest transactions?")
+
+# Phase 3 (future): Natural language only
+ask_question("What are the slowest transactions in test #714?")
+# LLM figures it out autonomously
+```
+
+---
+
+#### Migration Timeline
+
+| Phase | Status | Time | Capabilities Added |
+|-------|--------|------|-------------------|
+| Phase 1 | ✅ Complete | 30 min | Helper prevents hallucination |
+| Phase 0 (MCP Setup) | Not Started | 1 hour | MCP server scaffolding |
+| Phase 1 (MCP Foundation) | Not Started | 2-3 hours | Basic MCP tools (query, detail) |
+| Phase 2 (Wrapper) | Not Started | 1 hour | Helper uses MCP backend |
+| Phase 2 (RAG) | Not Started | 3-4 hours | Semantic search, embeddings |
+| Phase 3 (Pure MCP) | Not Started | Deprecation | LLM autonomy, tool chaining |
+
+**Decision Points**:
+- Keep Phase 1 helper until Phase 2 RAG complete (backward compatibility)
+- Deprecate helper only after Phase 3 proven stable
+- Both interfaces can coexist during transition
+
+---
+
 ### Phase 0: Prerequisites & Setup (1 hour)
 
 **Tasks:**
