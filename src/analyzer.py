@@ -417,3 +417,124 @@ Use tables and bullet points for clarity."""
                 lines.append(f"| {feat} | {val1:.4f} | {val2:.4f} | {diff_str} |")
         
         return "\n".join(lines)
+    
+    def get_test_context(
+        self,
+        testplan_or_index,
+        sort_by: str = "perc_95"
+    ) -> str:
+        """
+        Get detailed test context for LLM queries (prevents hallucination).
+        
+        This method fetches real transaction data and formats it for LLM consumption.
+        Use this when asking specific questions about a test to ensure the LLM
+        has access to actual data rather than making up answers.
+        
+        Args:
+            testplan_or_index: Test index (int) or testplan ID (str)
+            sort_by: Column to sort transactions by (default: "perc_95")
+            
+        Returns:
+            Formatted string with test details and all transactions
+            
+        Example:
+            # By index
+            context = analyzer.get_test_context(0)
+            
+            # By testplan ID
+            context = analyzer.get_test_context("LoadTest_20260304T060726Z")
+            
+            # Then use in LLM query
+            response = analyzer.llm.chat(messages=[
+                {"role": "user", "content": f"{context}\\n\\nQuestion: What are the slowest transactions?"}
+            ])
+        """
+        # Load full dataset if not already loaded
+        df = self.data_source.load_test_data()
+        
+        # Get testplan ID
+        if isinstance(testplan_or_index, int):
+            # User provided index - get testplan from dataframe
+            unique_tests = df['testplan'].unique()
+            if testplan_or_index < 0 or testplan_or_index >= len(unique_tests):
+                raise ValueError(
+                    f"Test index {testplan_or_index} out of range. "
+                    f"Valid range: 0-{len(unique_tests)-1}"
+                )
+            testplan = unique_tests[testplan_or_index]
+        else:
+            testplan = testplan_or_index
+        
+        # Fetch real test data
+        test_data = df[df["testplan"] == testplan]
+        
+        if len(test_data) == 0:
+            raise ValueError(f"Test '{testplan}' not found in dataset")
+        
+        # Get test metadata
+        test_info = test_data.iloc[0]
+        
+        # Build context with real transaction data
+        lines = []
+        
+        # Test header
+        lines.append(f"# Test Details: {testplan}")
+        lines.append("")
+        
+        # Metadata
+        lines.append("## Test Metadata")
+        lines.append(f"- **Test Plan**: {testplan}")
+        lines.append(f"- **Exit Code**: {test_info['exit_code']}")
+        lines.append(f"- **Result**: {'PASS' if test_info['exit_code'] == 1 else 'FAIL'}")
+        
+        # Optional fields
+        if 'duration_sec' in test_data.columns:
+            duration = test_info.get('duration_sec', 'N/A')
+            lines.append(f"- **Duration**: {duration} seconds")
+        
+        if 'build_version' in test_data.columns:
+            lines.append(f"- **Build Version**: {test_info['build_version']}")
+        
+        if 'num_clients' in test_data.columns:
+            lines.append(f"- **Virtual Users**: {test_info['num_clients']}")
+        
+        if 'end_time' in test_data.columns:
+            lines.append(f"- **Timestamp**: {test_info['end_time']}")
+        
+        lines.append("")
+        
+        # Transaction performance
+        lines.append("## Transaction Performance")
+        lines.append("")
+        lines.append("Transactions sorted by P95 response time (highest first):")
+        lines.append("")
+        
+        # Sort transactions by specified column
+        transactions = test_data.sort_values(by=sort_by, ascending=False)
+        
+        # Format each transaction
+        for idx, txn in transactions.iterrows():
+            txn_name = txn['transaction_name']
+            p95 = txn['perc_95']
+            avg_rt = txn['avg_response_time']
+            error_pct = txn['error_percentage']
+            
+            # Highlight problematic transactions
+            status = ""
+            if error_pct > 0:
+                status = " ⚠️ HAS ERRORS"
+            elif p95 > 5000:  # >5 seconds
+                status = " 🐌 SLOW"
+            
+            lines.append(
+                f"**{txn_name}**{status}\n"
+                f"  - P95: {p95:.2f} ms\n"
+                f"  - Average: {avg_rt:.2f} ms\n"
+                f"  - Error Rate: {error_pct:.2f}%\n"
+            )
+        
+        lines.append("")
+        lines.append("---")
+        lines.append("*This data includes ALL transactions from the actual test run.*")
+        
+        return "\n".join(lines)

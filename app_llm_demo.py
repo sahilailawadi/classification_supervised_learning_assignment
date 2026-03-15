@@ -112,6 +112,36 @@ Maintain conversation context and reference previous questions when relevant."""
     except Exception as e:
         return f"❌ Error: {e}", 0
 
+def ask_about_test(testplan_or_index, question: str):
+    """
+    Ask a question about a specific test with real data (prevents hallucination).
+    
+    Args:
+        testplan_or_index: Test index (0-N) or testplan ID string
+        question: Your question about the test
+        
+    Returns:
+        Tuple of (answer, tokens_used)
+        
+    Example:
+        answer, tokens = ask_about_test(0, "What are the slowest transactions?")
+        answer, tokens = ask_about_test("LoadTest_20260304T060726Z", "Why did this fail?")
+    """
+    analyzer = st.session_state.analyzer
+    
+    try:
+        # Get detailed test context with real data
+        test_context = analyzer.get_test_context(testplan_or_index)
+        
+        # Build full prompt with test details
+        full_question = f"{test_context}\n\n---\n\n**Question:** {question}"
+        
+        # Use the regular ask function with conversation history
+        return ask_llm_question(full_question, context="")
+    
+    except Exception as e:
+        return f"❌ Error: {e}", 0
+
 # Sidebar
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
