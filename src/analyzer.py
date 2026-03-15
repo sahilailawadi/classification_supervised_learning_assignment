@@ -147,17 +147,18 @@ class TestAnalyzer:
         if len(df_features) == 0:
             raise ValueError(f"Feature engineering failed for test: {testplan}")
         
-        # Extract and scale features
-        X = df_features[MODEL_FEATURES].values
+        # Extract and scale features (convert back to DataFrame to preserve column names)
+        X = df_features[MODEL_FEATURES]
         X_scaled = self.scaler.transform(X)
+        X_scaled_df = pd.DataFrame(X_scaled, columns=MODEL_FEATURES, index=X.index)
         
         # Predict
-        prediction = self.model.predict(X_scaled)[0]
+        prediction = self.model.predict(X_scaled_df)[0]
         
         # Get confidence if available
         confidence = None
         if hasattr(self.model, 'predict_proba'):
-            proba = self.model.predict_proba(X_scaled)[0]
+            proba = self.model.predict_proba(X_scaled_df)[0]
             confidence = float(max(proba))
         
         # Extract features as dict
