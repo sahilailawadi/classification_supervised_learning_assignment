@@ -32,3 +32,24 @@ data_exports/
 # Local files (anonymization mappings, credentials)
 local/
 .anonymization_map.json
+
+# Work-specific files (kept in finetuning branch only)
+DEPLOY_STREAMLIT_CLOUD.md
+FINETUNING.md
+README_Comcast.md
+STREAMLIT_GUIDE.md
+app_comcast.py
+assignment_1.md
+evaluate_signoff_tests.py
+models/metrics_production.json
+models/model_production.pkl
+models/production_labels.json
+models/scaler_production.pkl
+src/production_labels.py
+src/relabel.py
+scripts/add_ask_with_data.py
+scripts/simplify_notebook_helpers.py
+
+# Project notes and instructions (local only)
+copilot-instructions.md
+notes.md
