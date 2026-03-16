@@ -487,7 +487,7 @@ elif page == "🔍 Deep Dive":
     # Test selector
     tests = analyzer.data_source.list_tests(limit=50)
     
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([5, 1])
     with col1:
         selected_test = st.selectbox(
             "Select a test:",
@@ -496,7 +496,9 @@ elif page == "🔍 Deep Dive":
         )
     
     with col2:
-        analyze_button = st.button("🔍 Analyze", type="primary")
+        st.write("")  # Add spacing to align button with selectbox
+        st.write("")  # 
+        analyze_button = st.button("🔍 Analyze", type="primary", use_container_width=True)
     
     # Only analyze on button click (removed automatic analysis on selection change)
     if analyze_button:
@@ -587,66 +589,34 @@ elif page == "🔍 Deep Dive":
             # HYBRID APPROACH: Quick Actions + Chat
             st.markdown("---")
             st.markdown("### 💬 Ask About This Test")
-            st.markdown(f"Ask questions about **{selected_test}** or generate reports:")
+            st.markdown(f"Ask questions about **{selected_test}**:")
             
-            # Quick action buttons
-            st.markdown("**Quick Actions:**")
-            col1, col2, col3, col4 = st.columns(4)
+            # TEMPORARILY DISABLED: Quick action buttons - issue with page refresh/question handling
+            # TODO: Fix quick action button workflow
+            # st.markdown("**Quick Actions:**")
+            # col1, col2, col3, col4 = st.columns(4)
+            # ... buttons here ...
             
-            with col1:
-                if st.button("📝 PO Report", key="quick_po", use_container_width=True):
-                    conf_pct = confidence if confidence >= 2 else confidence * 100
-                    st.session_state.pending_deepdive_question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
-                    st.rerun()
+            # Chat input using form to handle submission properly
+            st.markdown("**Ask a question:**")
+            with st.form(key=f"chat_form_{selected_test}", clear_on_submit=True):
+                test_question = st.text_input(
+                    "Type your question...",
+                    placeholder="e.g., 'What are the top 3 performance risks?', 'Is /negotiate endpoint acceptable?'",
+                    key="test_question_input",
+                    label_visibility="collapsed"
+                )
+                
+                submitted = st.form_submit_button("💬 Ask", type="primary", use_container_width=True)
             
-            with col2:
-                if st.button("🔬 Eng Report", key="quick_eng", use_container_width=True):
-                    conf_pct = confidence if confidence >= 2 else confidence * 100
-                    st.session_state.pending_deepdive_question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {conf_pct:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
-                    st.rerun()
+            # Clear chat button (outside form)
+            if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
+                if selected_test in st.session_state.test_chat_history:
+                    st.session_state.test_chat_history[selected_test] = []
+                st.rerun()
             
-            with col3:
-                if st.button("📊 QA Report", key="quick_qa", use_container_width=True):
-                    conf_pct = confidence if confidence >= 2 else confidence * 100
-                    st.session_state.pending_deepdive_question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
-                    st.rerun()
-            
-            with col4:
-                if st.button("❓ Explain Prediction", key="quick_explain", use_container_width=True):
-                    conf_pct = confidence if confidence >= 2 else confidence * 100
-                    st.session_state.pending_deepdive_question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
-                    st.rerun()
-            
-            # Handle pending question from quick actions (before input widget)
-            pending_question = None
-            if 'pending_deepdive_question' in st.session_state and st.session_state.pending_deepdive_question:
-                pending_question = st.session_state.pending_deepdive_question
-                st.session_state.pending_deepdive_question = None
-            
-            # Chat input
-            st.markdown("**Or ask a custom question:**")
-            test_question = st.text_input(
-                "Ask anything about this test...",
-                value=pending_question or "",
-                placeholder="e.g., 'What are the top 3 performance risks?', 'Is /negotiate endpoint acceptable?'",
-                key="test_question_input"
-            )
-            
-            col_ask, col_clear = st.columns([4, 1])
-            with col_ask:
-                ask_button = st.button("💬 Ask", type="primary", use_container_width=True)
-            with col_clear:
-                if st.button("🗑️ Clear Chat", use_container_width=True):
-                    if selected_test in st.session_state.test_chat_history:
-                        st.session_state.test_chat_history[selected_test] = []
-                    st.rerun()
-            
-            # Auto-trigger ask button if we have a pending question
-            if pending_question:
-                ask_button = True
-            
-            # Process question
-            if ask_button and test_question:
+            # Process question from form submission
+            if submitted and test_question:
                 with st.spinner("🤖 Analyzing..."):
                     # Use ask_about_test for test-specific context
                     answer, tokens = ask_about_test(selected_test, test_question)
@@ -655,6 +625,8 @@ elif page == "🔍 Deep Dive":
                     if selected_test not in st.session_state.test_chat_history:
                         st.session_state.test_chat_history[selected_test] = []
                     st.session_state.test_chat_history[selected_test].append((test_question, answer))
+                    
+                # Note: Form clears input automatically via clear_on_submit=True
             
             # Display chat history for this test
             if selected_test in st.session_state.test_chat_history and st.session_state.test_chat_history[selected_test]:
