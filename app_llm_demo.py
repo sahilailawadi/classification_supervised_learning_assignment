@@ -722,6 +722,22 @@ elif page == "🔍 Deep Dive":
             # Get LLM analysis
             analysis = analyzer.analyze_test(selected_test, include_transactions=True)
             
+            # Store in session state for persistence across reruns
+            st.session_state.current_analysis = {
+                'test_id': selected_test,
+                'prediction': pred_result,
+                'analysis': analysis
+            }
+    
+    # Display analysis if it exists in session state and matches selected test
+    if 'current_analysis' in st.session_state and st.session_state.current_analysis:
+        analysis_data = st.session_state.current_analysis
+        
+        # Only display if analysis matches currently selected test
+        if analysis_data['test_id'] == selected_test:
+            pred_result = analysis_data['prediction']
+            analysis = analysis_data['analysis']
+            
             # Display results
             st.markdown("---")
             
@@ -800,16 +816,67 @@ elif page == "🔍 Deep Dive":
             # HYBRID APPROACH: Quick Actions + Chat
             st.markdown("---")
             st.markdown("### 💬 Ask About This Test")
-            st.markdown(f"Ask questions about **{selected_test}**:")
+            st.markdown(f"Ask questions about **{selected_test}** or generate reports:")
             
-            # TEMPORARILY DISABLED: Quick action buttons - issue with page refresh/question handling
-            # TODO: Fix quick action button workflow
-            # st.markdown("**Quick Actions:**")
-            # col1, col2, col3, col4 = st.columns(4)
-            # ... buttons here ...
+            # Quick action buttons
+            st.markdown("**Quick Actions:**")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("📝 PO Report", key="quick_po", use_container_width=True):
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
+                    
+                    # Process immediately without page refresh
+                    with st.spinner("🤖 Analyzing..."):
+                        answer, tokens = ask_about_test(selected_test, question)
+                        
+                        if selected_test not in st.session_state.test_chat_history:
+                            st.session_state.test_chat_history[selected_test] = []
+                        st.session_state.test_chat_history[selected_test].append((question, answer))
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔬 Eng Report", key="quick_eng", use_container_width=True):
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {conf_pct:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
+                    
+                    with st.spinner("🤖 Analyzing..."):
+                        answer, tokens = ask_about_test(selected_test, question)
+                        
+                        if selected_test not in st.session_state.test_chat_history:
+                            st.session_state.test_chat_history[selected_test] = []
+                        st.session_state.test_chat_history[selected_test].append((question, answer))
+                    st.rerun()
+            
+            with col3:
+                if st.button("📊 QA Report", key="quick_qa", use_container_width=True):
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
+                    
+                    with st.spinner("🤖 Analyzing..."):
+                        answer, tokens = ask_about_test(selected_test, question)
+                        
+                        if selected_test not in st.session_state.test_chat_history:
+                            st.session_state.test_chat_history[selected_test] = []
+                        st.session_state.test_chat_history[selected_test].append((question, answer))
+                    st.rerun()
+            
+            with col4:
+                if st.button("❓ Explain Prediction", key="quick_explain", use_container_width=True):
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
+                    
+                    with st.spinner("🤖 Analyzing..."):
+                        answer, tokens = ask_about_test(selected_test, question)
+                        
+                        if selected_test not in st.session_state.test_chat_history:
+                            st.session_state.test_chat_history[selected_test] = []
+                        st.session_state.test_chat_history[selected_test].append((question, answer))
+                    st.rerun()
             
             # Chat input using form to handle submission properly
-            st.markdown("**Ask a question:**")
+            st.markdown("**Or ask a custom question:**")
             with st.form(key=f"chat_form_{selected_test}", clear_on_submit=True):
                 test_question = st.text_input(
                     "Type your question...",
