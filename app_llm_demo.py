@@ -56,6 +56,8 @@ if 'current_test' not in st.session_state:
     st.session_state.current_test = None
 if 'pending_question' not in st.session_state:
     st.session_state.pending_question = None
+if 'test_chat_history' not in st.session_state:
+    st.session_state.test_chat_history = {}  # {test_id: [(question, answer), ...]}
 
 def initialize_system():
     """Initialize TestAnalyzer and load data"""
@@ -578,149 +580,94 @@ elif page == "🔍 Deep Dive":
                 
                 st.dataframe(test_data[display_cols], use_container_width=True)
             
-            # Report generation (NEW - only show if PASS)
-            if pred_result['prediction'] == "PASS":
+            # HYBRID APPROACH: Quick Actions + Chat
+            st.markdown("---")
+            st.markdown("### 💬 Ask About This Test")
+            st.markdown(f"Ask questions about **{selected_test}** or generate reports:")
+            
+            # Quick action buttons
+            st.markdown("**Quick Actions:**")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("📝 PO Report", key="quick_po", use_container_width=True):
+                    st.session_state.pending_deepdive_question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔬 Eng Report", key="quick_eng", use_container_width=True):
+                    st.session_state.pending_deepdive_question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
+                    st.rerun()
+            
+            with col3:
+                if st.button("📊 QA Report", key="quick_qa", use_container_width=True):
+                    st.session_state.pending_deepdive_question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
+                    st.rerun()
+            
+            with col4:
+                if st.button("❓ Explain Prediction", key="quick_explain", use_container_width=True):
+                    st.session_state.pending_deepdive_question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {pred_result['confidence']:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
+                    st.rerun()
+            
+            # Chat input
+            st.markdown("**Or ask a custom question:**")
+            test_question = st.text_input(
+                "Ask anything about this test...",
+                placeholder="e.g., 'What are the top 3 performance risks?', 'Is /negotiate endpoint acceptable?'",
+                key="test_question_input"
+            )
+            
+            col_ask, col_clear = st.columns([4, 1])
+            with col_ask:
+                ask_button = st.button("💬 Ask", type="primary", use_container_width=True)
+            with col_clear:
+                if st.button("🗑️ Clear Chat", use_container_width=True):
+                    if selected_test in st.session_state.test_chat_history:
+                        st.session_state.test_chat_history[selected_test] = []
+                    st.rerun()
+            
+            # Handle pending question from quick actions
+            if 'pending_deepdive_question' in st.session_state and st.session_state.pending_deepdive_question:
+                test_question = st.session_state.pending_deepdive_question
+                st.session_state.pending_deepdive_question = None
+                ask_button = True
+            
+            # Process question
+            if ask_button and test_question:
+                with st.spinner("🤖 Analyzing..."):
+                    # Use ask_about_test for test-specific context
+                    answer, tokens = ask_about_test(selected_test, test_question)
+                    
+                    # Store in test-specific chat history
+                    if selected_test not in st.session_state.test_chat_history:
+                        st.session_state.test_chat_history[selected_test] = []
+                    st.session_state.test_chat_history[selected_test].append((test_question, answer))
+            
+            # Display chat history for this test
+            if selected_test in st.session_state.test_chat_history and st.session_state.test_chat_history[selected_test]:
                 st.markdown("---")
-                st.markdown("### 📄 Generate Sign-Off Reports")
-                st.markdown("Generate stakeholder-ready reports based on this analysis:")
+                st.markdown("### 📝 Conversation")
                 
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    if st.button("📝 Product Owner Report", key="po_report"):
-                        with st.spinner("Generating PO sign-off report..."):
-                            report_question = f"""Generate a release sign-off report for test {selected_test} for Product Owner review.
-
-Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
-
-Step 1: Use get_test_detail to get full test information including throughput
-Step 2: Use get_baseline_comparison to compare all transactions with baseline
-
-Create a professional report with:
-
-1. Executive Summary (2-3 sentences)
-
-2. Test Overview Table:
-   Include: Test Name, P95, Error%, Transactions, Throughput, Result, End Time, Classifier Confidence
-
-3. Performance vs Baseline:
-   - Overall deviation summary
-   - Critical transactions (>50% degradation)
-   - Use actual data from get_baseline_comparison
-
-4. Risk Assessment:
-   List any concerns with impact level (High/Medium/Low)
-
-5. **Release Recommendation** (bold):
-   - **GO** / **NO-GO** / **GO WITH CAUTION**
-   - Justification in 2-3 sentences
-
-Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
-                            
-                            report, tokens = ask_about_test(selected_test, report_question)
-                            st.markdown("#### 📝 Product Owner Sign-Off Report")
-                            st.markdown(report)
-                            st.download_button(
-                                "⬇️ Download Report",
-                                report,
-                                file_name=f"PO_SignOff_{selected_test}.md",
-                                mime="text/markdown",
-                                key="download_po"
-                            )
-                
-                with col2:
-                    if st.button("🔬 Engineering Report", key="eng_report"):
-                        with st.spinner("Generating technical report..."):
-                            report_question = f"""Generate a detailed engineering report for test {selected_test} for Dev/QA teams.
-
-Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
-
-Step 1: Use get_test_detail to get test details
-Step 2: Use get_baseline_comparison to get ALL transaction-level data
-
-Create a technical report with:
-
-1. Classifier Analysis:
-   - Prediction with confidence
-   - Top 5 most important features with values
-
-2. Transaction-level Performance Breakdown:
-   MUST show ACTUAL DATA from get_baseline_comparison (not placeholders):
-   Create full table with ALL transactions showing:
-   | Transaction | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% | Status |
-   
-3. Critical Issues:
-   - Transactions with >50% P95 degradation
-   - Transactions with errors
-   - Root cause analysis
-
-4. Action Items:
-   - Specific debugging steps
-   - Code areas to investigate
-   - Optimization recommendations
-
-Format: Technical depth suitable for engineers. Use actual numbers and data."""
-                            
-                            report, tokens = ask_about_test(selected_test, report_question)
-                            st.markdown("#### 🔬 Engineering Report")
-                            st.markdown(report)
-                            st.download_button(
-                                "⬇️ Download Report",
-                                report,
-                                file_name=f"Engineering_{selected_test}.md",
-                                mime="text/markdown",
-                                key="download_eng"
-                            )
-                
-                with col3:
-                    if st.button("📊 QA Report", key="qa_report"):
-                        with st.spinner("Generating QA report..."):
-                            report_question = f"""Generate a QA-focused report for test {selected_test}.
-
-Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
-
-Step 1: Use get_test_detail for test information
-Step 2: Use get_baseline_comparison for quality metrics vs baseline
-
-Create a QA report with:
-
-1. Test Summary:
-   - Test ID and scope
-   - Duration and load level
-   - Classifier: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
-
-2. Quality Metrics vs Baseline:
-   MUST include actual transaction data table:
-   | Transaction | P95 | Baseline P95 | Δ% | Errors | Pass/Fail |
-   
-3. Pass/Fail Analysis:
-   - Why classifier marked as {pred_result['prediction']}
-   - Transactions meeting quality bar
-   - Transactions below quality bar
-
-4. Edge Cases & Anomalies:
-   - Boundary conditions tested
-   - Unexpected behaviors
-
-5. **Sign-Off Status** (bold):
-   - Ready for release / Needs retest / Blocked
-   - Specific follow-up actions if needed
-
-Format: QA perspective, focus on test quality and coverage."""
-                            
-                            report, tokens = ask_about_test(selected_test, report_question)
-                            st.markdown("#### 📊 QA Report")
-                            st.markdown(report)
-                            st.download_button(
-                                "⬇️ Download Report",
-                                report,
-                                file_name=f"QA_{selected_test}.md",
-                                mime="text/markdown",
-                                key="download_qa"
-                            )
-            else:
-                st.markdown("---")
-                st.info("💡 **Note:** Sign-off report generation is available for tests predicted as PASS. This test requires further review.")
+                for i, (q, a) in enumerate(st.session_state.test_chat_history[selected_test]):
+                    # Question
+                    st.markdown(f"**👤 You:** {q}")
+                    
+                    # Answer
+                    with st.container():
+                        st.markdown(f"**🤖 Answer:**")
+                        st.markdown(a)
+                        
+                        # Download button for this answer
+                        st.download_button(
+                            "📥 Download as Markdown",
+                            f"# Question\n{q}\n\n# Answer\n{a}",
+                            file_name=f"{selected_test}_Q{i+1}.md",
+                            mime="text/markdown",
+                            key=f"download_qa_{selected_test}_{i}"
+                        )
+                    
+                    if i < len(st.session_state.test_chat_history[selected_test]) - 1:
+                        st.markdown("---")
 
 # ============================================================================
 # PAGE: Compare Tests
