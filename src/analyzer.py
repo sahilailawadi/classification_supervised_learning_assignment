@@ -654,6 +654,13 @@ Available tools:
      * testplan1: first test id
      * testplan2: second test id
 
+4. get_baseline_comparison(testplan)
+   - Compare a test against classifier's baseline data
+   - Use for: "compare with baseline", "baseline comparison", "vs baseline"
+   - Shows actual baseline values used by classifier (medians from passing runs)
+   - Parameters:
+     * testplan: the test identifier
+
 Respond with JSON:
 {
   "reasoning": "brief explanation of tool selection",
@@ -701,6 +708,7 @@ Which tools should be called to answer this question?"""
         from mcp_server.tools.query import query_tests
         from mcp_server.tools.detail import get_test_detail
         from mcp_server.tools.compare import compare_tests
+        from mcp_server.tools.baseline import get_baseline_comparison
         
         if tool_name == 'query_tests':
             # Pass data_source to reuse connection
@@ -722,6 +730,12 @@ Which tools should be called to answer this question?"""
             return compare_tests(
                 params['testplan1'],
                 params['testplan2'],
+                analyzer=self  # Reuse connection!
+            )
+        elif tool_name == 'get_baseline_comparison':
+            # Pass analyzer to reuse connection
+            return get_baseline_comparison(
+                params['testplan'],
                 analyzer=self  # Reuse connection!
             )
         else:
@@ -776,6 +790,44 @@ Which tools should be called to answer this question?"""
                     f"  P95 delta: {diff['p95_delta']:+.0f}ms ({diff['p95_pct_change']:+.1%})\n"
                     f"  Error delta: {diff['error_delta']:+.1f}%\n"
                 )
+            
+            elif tr['tool'] == 'get_baseline_comparison':
+                result = tr['result']
+                if 'error' in result:
+                    context_parts.append(f"Error: {result['error']}\n")
+                else:
+                    summary = result['summary']
+                    context_parts.append(
+                        f"Test: {result['testplan']}\n"
+                        f"Baseline: {result['baseline_source']}\n"
+                        f"Grouping: {result['baseline_grouping']}\n"
+                        f"Result: {summary['result']}\n"
+                        f"Transactions: {summary['total_transactions']} total, "
+                        f"{summary['transactions_with_baseline']} with baseline\n"
+                    )
+                    
+                    if summary['transactions_with_baseline'] > 0:
+                        context_parts.append(
+                            f"Performance vs Baseline:\n"
+                            f"  Avg P95 deviation: {summary['avg_p95_deviation_pct']:+.1f}%\n"
+                            f"  Max P95 deviation: {summary['max_p95_deviation_pct']:+.1f}%\n"
+                            f"  Critical deviations (>50%): {summary['critical_deviations']}\n\n"
+                        )
+                        
+                        # Show top 5 worst deviations
+                        transactions = sorted(
+                            [t for t in result['transactions'] if t['has_baseline']],
+                            key=lambda x: x['deviation']['p95_pct'],
+                            reverse=True
+                        )[:5]
+                        
+                        context_parts.append("Top 5 deviations from baseline:\n")
+                        for i, txn in enumerate(transactions, 1):
+                            context_parts.append(
+                                f"{i}. {txn['name']}: "
+                                f"P95={txn['actual']['p95']:.0f}ms (baseline: {txn['baseline']['p95']:.0f}ms, "
+                                f"{txn['deviation']['p95_pct']:+.1f}%)\n"
+                            )
         
         return ''.join(context_parts)
     
