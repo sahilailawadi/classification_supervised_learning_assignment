@@ -603,10 +603,12 @@ Use tables and bullet points for clarity."""
         # Step 2: Execute the appropriate MCP tools
         tool_results = []
         for tool_call in tool_selection['tools']:
-            print(f"   🔧 Calling {tool_call['name']}({tool_call['params']})")
-            result = self._execute_mcp_tool(tool_call['name'], tool_call['params'])
+            tool_name = tool_call['name']
+            print(f"   🔧 Calling {tool_name}({tool_call['params']})")
+            print(f"      ↳ Reusing data source connection (no new DB connection)")
+            result = self._execute_mcp_tool(tool_name, tool_call['params'])
             tool_results.append({
-                'tool': tool_call['name'],
+                'tool': tool_name,
                 'params': tool_call['params'],
                 'result': result
             })
@@ -689,23 +691,39 @@ Which tools should be called to answer this question?"""
             }
     
     def _execute_mcp_tool(self, tool_name: str, params: Dict[str, Any]) -> Any:
-        """Execute an MCP tool with given parameters."""
+        """
+        Execute an MCP tool with given parameters.
+        
+        IMPORTANT: Passes self.data_source or self to tools to reuse connections
+        and avoid creating new Postgres connections on every tool call.
+        """
         # Lazy import to avoid circular dependency
         from mcp_server.tools.query import query_tests
         from mcp_server.tools.detail import get_test_detail
         from mcp_server.tools.compare import compare_tests
         
         if tool_name == 'query_tests':
+            # Pass data_source to reuse connection
             return query_tests(
                 limit=params.get('limit', 10),
                 exit_code=params.get('exit_code'),
                 sort_by=params.get('sort_by', 'end_time'),
-                ascending=params.get('ascending', False)
+                ascending=params.get('ascending', False),
+                data_source=self.data_source  # Reuse connection!
             )
         elif tool_name == 'get_test_detail':
-            return get_test_detail(params['testplan'])
+            # Pass analyzer to reuse connection
+            return get_test_detail(
+                params['testplan'],
+                analyzer=self  # Reuse connection!
+            )
         elif tool_name == 'compare_tests':
-            return compare_tests(params['testplan1'], params['testplan2'])
+            # Pass analyzer to reuse connection
+            return compare_tests(
+                params['testplan1'],
+                params['testplan2'],
+                analyzer=self  # Reuse connection!
+            )
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
     

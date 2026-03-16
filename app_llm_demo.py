@@ -82,21 +82,42 @@ def ask_llm_question(question: str, context: str = ""):
     analyzer = st.session_state.analyzer
     conversation_history = st.session_state.conversation_history
     
+    # Create status container for detailed progress
+    status_container = st.empty()
+    
     try:
-        # Use unified ask() method with MCP tool integration
-        # If context provided, pass it; otherwise let ask() handle it
-        result = analyzer.ask(
-            question,
-            data_context=context if context else None,
-            conversation_history=conversation_history
-        )
+        # Show initial status
+        with status_container:
+            with st.status("🤖 Processing your question...", expanded=True) as status:
+                st.write("🔍 Analyzing question to determine data needs...")
+                
+                # Use unified ask() method with MCP tool integration
+                # If context provided, pass it; otherwise let ask() handle it
+                result = analyzer.ask(
+                    question,
+                    data_context=context if context else None,
+                    conversation_history=conversation_history
+                )
+                
+                # Show what tools were used
+                tools_used = result.get('tools_used', [])
+                if tools_used:
+                    st.write(f"✅ Used MCP tools: {', '.join(tools_used)}")
+                    st.write("💡 Reused existing database connection (no new connection overhead)")
+                else:
+                    st.write("✅ Used dataset overview (no tool calls needed)")
+                
+                status.update(label="✅ Analysis complete!", state="complete")
+        
+        # Clear status after completion
+        status_container.empty()
         
         # Extract tools used for display
-        tools_used = result.get('tools_used', [])
-        tools_info = f" (Tools: {', '.join(tools_used)})" if tools_used else ""
+        tools_info = f"\n\n*🔧 Tools: {', '.join(tools_used)}*" if tools_used else ""
         
-        return result['answer'] + f"\n\n*{tools_info}*", result['tokens_used']
+        return result['answer'] + tools_info, result['tokens_used']
     except Exception as e:
+        status_container.empty()
         return f"❌ Error: {e}", 0
 
 def ask_about_test(testplan_or_index, question: str):
@@ -223,12 +244,11 @@ if page == "💬 Chat Analysis":
         with st.chat_message("user"):
             st.write(question)
         
-        # Get LLM response
+        # Get LLM response with detailed status
         with st.chat_message("assistant"):
-            with st.spinner("🤔 Thinking..."):
-                answer, tokens = ask_llm_question(question)
-                st.markdown(answer)
-                st.caption(f"💭 *Tokens used: {tokens}*")
+            answer, tokens = ask_llm_question(question)
+            st.markdown(answer)
+            st.caption(f"💭 *Tokens used: {tokens}*")
         
         # Save to history
         st.session_state.conversation_history.append((question, answer))
@@ -241,12 +261,11 @@ if page == "💬 Chat Analysis":
         with st.chat_message("user"):
             st.write(question)
         
-        # Get LLM response
+        # Get LLM response with detailed status
         with st.chat_message("assistant"):
-            with st.spinner("🤔 Thinking..."):
-                answer, tokens = ask_llm_question(question)
-                st.markdown(answer)
-                st.caption(f"💭 *Tokens used: {tokens}*")
+            answer, tokens = ask_llm_question(question)
+            st.markdown(answer)
+            st.caption(f"💭 *Tokens used: {tokens}*")
         
         # Save to history
         st.session_state.conversation_history.append((question, answer))

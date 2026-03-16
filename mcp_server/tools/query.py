@@ -12,14 +12,15 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.data_source import get_data_source
+from src.data_source import get_data_source, BaseDataSource
 
 
 def query_tests(
     limit: int = 10,
     exit_code: Optional[int] = None,
     sort_by: str = "end_time",
-    ascending: bool = False
+    ascending: bool = False,
+    data_source: Optional[BaseDataSource] = None
 ) -> dict:
     """
     Query test runs with optional filtering and sorting.
@@ -29,6 +30,7 @@ def query_tests(
         exit_code: Filter by exit code (1=PASS, 2+=FAIL)
         sort_by: Column to sort by (default: "end_time")
         ascending: Sort ascending if True, descending if False
+        data_source: Optional data source (reuses connection if provided)
         
     Returns:
         Dict with 'tests' list and 'count'
@@ -37,13 +39,14 @@ def query_tests(
         # Get last 5 tests
         query_tests(limit=5, sort_by="end_time", ascending=False)
         
-        # Get failed tests
-        query_tests(limit=10, exit_code=2)
+        # Get failed tests (reusing existing data source)
+        query_tests(limit=10, exit_code=2, data_source=my_data_source)
     """
-    # Get data source (automatically uses correct mode)
-    data_source = get_data_source()
+    # Get data source (automatically uses correct mode, or reuse if provided)
+    if data_source is None:
+        data_source = get_data_source()
     
-    # Load full dataset
+    # Load full dataset (will use cached data if data source is reused)
     df = data_source.load_test_data()
     
     # Apply filters

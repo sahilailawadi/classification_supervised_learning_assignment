@@ -12,24 +12,30 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.analyzer import TestAnalyzer
+from typing import Optional
 
 
-def compare_tests(testplan1: str, testplan2: str) -> dict:
+def compare_tests(testplan1: str, testplan2: str, analyzer: Optional[TestAnalyzer] = None) -> dict:
     """
-    Compare two test runs and identify differences.
+    Compare two test runs side-by-side.
     
     Args:
         testplan1: First test identifier
         testplan2: Second test identifier
+        analyzer: Optional analyzer instance (reuses connection if provided)
         
     Returns:
-        Dict with comparison analysis
+        Dict with comparison data including deltas
         
     Example:
         compare_tests("LoadTest_001", "LoadTest_002")
+        
+        # Reuse existing analyzer to avoid new connection
+        compare_tests("LoadTest_001", "LoadTest_002", analyzer=my_analyzer)
     """
-    # Initialize analyzer
-    analyzer = TestAnalyzer()
+    # Initialize analyzer (or reuse if provided)
+    if analyzer is None:
+        analyzer = TestAnalyzer()
     
     # Get predictions for both tests
     try:

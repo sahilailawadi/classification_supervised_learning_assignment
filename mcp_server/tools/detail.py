@@ -12,23 +12,29 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.analyzer import TestAnalyzer
+from typing import Optional
 
 
-def get_test_detail(testplan: str) -> dict:
+def get_test_detail(testplan: str, analyzer: Optional[TestAnalyzer] = None) -> dict:
     """
     Get comprehensive details about a specific test.
     
     Args:
         testplan: Test plan identifier
+        analyzer: Optional analyzer instance (reuses connection if provided)
         
     Returns:
         Dict with test details, transactions, and predictions
         
     Example:
         get_test_detail("LoadTest_20260304T060726Z")
+        
+        # Reuse existing analyzer to avoid new connection
+        get_test_detail("LoadTest_20260304T060726Z", analyzer=my_analyzer)
     """
-    # Initialize analyzer (uses correct mode automatically)
-    analyzer = TestAnalyzer()
+    # Initialize analyzer (uses correct mode automatically, or reuse if provided)
+    if analyzer is None:
+        analyzer = TestAnalyzer()
     
     # Get test context with all transaction details
     context = analyzer.get_test_context(testplan)
