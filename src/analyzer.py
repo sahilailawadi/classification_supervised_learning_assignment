@@ -597,8 +597,8 @@ Use tables and bullet points for clarity."""
         # NEW: Intelligent routing with MCP tools
         print(f"🤔 Analyzing question: '{question[:80]}{'...' if len(question) > 80 else ''}'")
         
-        # Step 1: Use LLM to determine which tools to call
-        tool_selection = self._determine_tools_needed(question)
+        # Step 1: Use LLM to determine which tools to call (with conversation context)
+        tool_selection = self._determine_tools_needed(question, conversation_history)
         
         # Step 2: Execute the appropriate MCP tools
         tool_results = []
@@ -622,12 +622,33 @@ Use tables and bullet points for clarity."""
         
         return response
     
-    def _determine_tools_needed(self, question: str) -> Dict[str, Any]:
+    def _determine_tools_needed(self, question: str, conversation_history: Optional[List[tuple]] = None) -> Dict[str, Any]:
         """
         Use LLM to analyze the question and determine which MCP tools to call.
         
+        Args:
+            question: User's question
+            conversation_history: Recent (question, answer) pairs for context
+        
         Returns dict with 'tools' list containing tool name and parameters.
         """
+        # Extract testplan IDs from recent conversation for context
+        conversation_context = "None"
+        if conversation_history:
+            recent = conversation_history[-3:]  # Last 3 exchanges
+            test_id_pattern = r'(LoadTest_\d{8}T\d{6}Z|StressTest_\d{8}T\d{6}Z|SoakTest_\d{8}T\d{6}Z)'
+            found_tests = []
+            for q, a in recent:
+                import re
+                # Search in both question and answer
+                found_tests.extend(re.findall(test_id_pattern, q))
+                found_tests.extend(re.findall(test_id_pattern, a))
+            
+            if found_tests:
+                # Deduplicate and keep most recent
+                unique_tests = list(dict.fromkeys(found_tests))  # preserves order
+                conversation_context = f"Recently mentioned tests: {', '.join(unique_tests[-3:])}"
+        
         system_prompt = """You are a query planner for a performance test analysis system.
 Analyze the user's question and determine which tools to call to fetch the necessary data.
 
@@ -658,21 +679,40 @@ Available tools:
    - Compare a test against classifier's baseline data
    - Use for: "compare with baseline", "baseline comparison", "vs baseline"
    - Shows actual baseline values used by classifier (medians from passing runs)
+   - Includes ALL baseline features: P95, Avg RT, Error%, Throughput/User
    - Parameters:
      * testplan: the test identifier
 
+IMPORTANT CONTEXT TRACKING RULES:
+1. When user refers to "current test", "this test", "the test", or "it":
+   - Extract the testplan ID from conversation history
+   - Look for testplan patterns like 'LoadTest_YYYYMMDDTHHMMSSZ', 'StressTest_*', etc.
+   - If a test was just analyzed/compared, reuse that same test ID
+   - NEVER use literal placeholders like '<test_id_from_previous_step>'
+
+2. When user asks "can we do X" or "show me X":
+   - "can we..." → they want to see if data supports it, format existing data from previous tool results
+   - "show me..." → fetch new data and display in requested format
+   - "generate..." → use existing data from conversation to create requested format
+
+3. Previous tool results are available in conversation history - leverage them for follow-up questions
+
 Respond with JSON:
 {
-  "reasoning": "brief explanation of tool selection",
+  "reasoning": "brief explanation of tool selection and any context extracted",
   "tools": [
     {"name": "tool_name", "params": {...}}
   ]
 }
 
 If the question needs data but you can't extract specific test IDs, use query_tests to list tests first.
-If it's a general statistics question (pass rate, total tests), return empty tools list."""
+If it's a general statistics question (pass rate, total tests), return empty tools list.
+If the question refers to previous results, extract necessary IDs from conversation history."""
 
         user_prompt = f"""Question: {question}
+
+Conversation history (recent mentions):
+{conversation_context}
 
 Which tools should be called to answer this question?"""
 
@@ -807,27 +847,58 @@ Which tools should be called to answer this question?"""
                     )
                     
                     if summary['transactions_with_baseline'] > 0:
+                        # Summary statistics (classifier-style features)
                         context_parts.append(
-                            f"Performance vs Baseline:\n"
+                            f"\nClassifier Features (vs Baseline):\n"
                             f"  Avg P95 deviation: {summary['avg_p95_deviation_pct']:+.1f}%\n"
                             f"  Max P95 deviation: {summary['max_p95_deviation_pct']:+.1f}%\n"
-                            f"  Critical deviations (>50%): {summary['critical_deviations']}\n\n"
+                            f"  Min P95 deviation: {summary['min_p95_deviation_pct']:+.1f}%\n"
+                            f"  Avg AvgRT deviation: {summary['avg_avgrt_deviation_pct']:+.1f}%\n"
+                            f"  Max AvgRT deviation: {summary['max_avgrt_deviation_pct']:+.1f}%\n"
+                            f"  Avg Error delta: {summary['avg_error_delta']:+.1f}%\n"
+                            f"  Max Error delta: {summary['max_error_delta']:+.1f}%\n"
+                            f"  Critical transactions (P95 >50%): {summary['pct_txn_critical_p95']:.1f}% ({summary['critical_deviations_count']} txns)\n"
+                            f"  Degraded transactions (P95 20-50%): {summary['pct_txn_degraded_p95']:.1f}% ({summary['degraded_deviations_count']} txns)\n\n"
                         )
                         
-                        # Show top 5 worst deviations
+                        # Full transaction comparison table (all baseline features)
+                        context_parts.append("### Full Transaction Comparison (All Baseline Features)\n\n")
+                        context_parts.append(
+                            "| Transaction | Actual P95 | Baseline P95 | Δ% | "
+                            "Actual Avg RT | Baseline Avg RT | Δ% | "
+                            "Actual Error% | Baseline Error% | Δ | "
+                            "Baseline Throughput/User |\n"
+                        )
+                        context_parts.append(
+                            "|------------|-----------|-------------|-----|"
+                            "--------------|-----------------|----|"
+                            "--------------|-----------------|---|"
+                            "-------------------------|\n"
+                        )
+                        
+                        # Sort by P95 deviation (worst first)
                         transactions = sorted(
                             [t for t in result['transactions'] if t['has_baseline']],
                             key=lambda x: x['deviation']['p95_pct'],
                             reverse=True
-                        )[:5]
+                        )
                         
-                        context_parts.append("Top 5 deviations from baseline:\n")
-                        for i, txn in enumerate(transactions, 1):
+                        for txn in transactions:
                             context_parts.append(
-                                f"{i}. {txn['name']}: "
-                                f"P95={txn['actual']['p95']:.0f}ms (baseline: {txn['baseline']['p95']:.0f}ms, "
-                                f"{txn['deviation']['p95_pct']:+.1f}%)\n"
+                                f"| {txn['name']} | "
+                                f"{txn['actual']['p95']:.0f}ms | "
+                                f"{txn['baseline']['p95']:.0f}ms | "
+                                f"{txn['deviation']['p95_pct']:+.1f}% | "
+                                f"{txn['actual']['avg_rt']:.0f}ms | "
+                                f"{txn['baseline']['avg_rt']:.0f}ms | "
+                                f"{txn['deviation']['avg_rt_pct']:+.1f}% | "
+                                f"{txn['actual']['error_pct']:.1f}% | "
+                                f"{txn['baseline']['error_pct']:.1f}% | "
+                                f"{txn['deviation']['error_delta']:+.1f}% | "
+                                f"{txn['baseline']['throughput_per_user']:.2f} |\n"
                             )
+                        
+                        context_parts.append("\n")
         
         return ''.join(context_parts)
     
@@ -879,7 +950,13 @@ Answer questions about the provided test data. Be concise but actionable.
 Use bullet points for clarity. Highlight key insights and performance issues.
 When data is provided, reference specific values and trends from that data.
 If patterns suggest problems, explain the likely impact and next investigation steps.
-Always relate findings back to user experience and system capacity."""
+Always relate findings back to user experience and system capacity.
+
+IMPORTANT: When tables are provided in the data context (markdown tables with pipes |):
+- Include the full table in your response (don't summarize it away)
+- Add brief commentary above/below the table explaining key patterns
+- Use the table data to support your analysis and recommendations
+- If user asks "can we do X" regarding data visualization, interpret existing tables to answer"""
         
         # Build messages array
         messages = [{"role": "system", "content": system_prompt}]

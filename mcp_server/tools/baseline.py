@@ -93,33 +93,45 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
         how='left'
     )
     
-    # Build transaction comparison list
+    # Build transaction comparison list with ALL baseline fields
     transactions = []
     for _, row in df_merged.iterrows():
         has_baseline = pd.notna(row.get('baseline_median_p95'))
         
+        # Actual values - include ALL available metrics
         txn_data = {
             'name': row['transaction_name'],
             'actual': {
                 'p95': float(row['perc_95']),
                 'avg_rt': float(row['avg_response_time']),
-                'error_pct': float(row['error_percentage'])
+                'min_rt': float(row.get('min_response', 0)),
+                'max_rt': float(row.get('max_response', 0)),
+                'error_pct': float(row['error_percentage']),
+                'total_count': int(row.get('total_count', 0)),
+                'pass_count': int(row.get('pass_count', 0)),
+                'fail_count': int(row.get('fail_count', 0))
             },
             'has_baseline': has_baseline
         }
         
         if has_baseline:
+            # Baseline values - include ALL baseline fields
             txn_data['baseline'] = {
                 'p95': float(row['baseline_median_p95']),
                 'avg_rt': float(row['baseline_median_avg_rt']),
-                'error_pct': float(row['baseline_median_error_pct'])
+                'error_pct': float(row['baseline_median_error_pct']),
+                'throughput_per_user': float(row.get('baseline_median_throughput_per_user', 0))
             }
+            
+            # Deviations for ALL metrics
             txn_data['deviation'] = {
                 'p95_pct': ((row['perc_95'] - row['baseline_median_p95']) / 
                            row['baseline_median_p95'] * 100) if row['baseline_median_p95'] > 0 else 0,
                 'avg_rt_pct': ((row['avg_response_time'] - row['baseline_median_avg_rt']) / 
                               row['baseline_median_avg_rt'] * 100) if row['baseline_median_avg_rt'] > 0 else 0,
-                'error_delta': row['error_percentage'] - row['baseline_median_error_pct']
+                'error_delta': row['error_percentage'] - row['baseline_median_error_pct'],
+                'p95_absolute': row['perc_95'] - row['baseline_median_p95'],
+                'avg_rt_absolute': row['avg_response_time'] - row['baseline_median_avg_rt']
             }
         else:
             txn_data['baseline'] = None
@@ -128,7 +140,7 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
         
         transactions.append(txn_data)
     
-    # Compute summary statistics
+    # Compute summary statistics AND classifier-style features
     with_baseline = [t for t in transactions if t['has_baseline']]
     
     summary = {
@@ -140,15 +152,41 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
         'transactions_without_baseline': len(transactions) - len(with_baseline)
     }
     
+    # Classifier-style features (mimics what the model sees)
     if with_baseline:
-        summary['avg_p95_deviation_pct'] = sum(t['deviation']['p95_pct'] for t in with_baseline) / len(with_baseline)
-        summary['max_p95_deviation_pct'] = max(t['deviation']['p95_pct'] for t in with_baseline)
-        summary['critical_deviations'] = len([t for t in with_baseline if t['deviation']['p95_pct'] > 50])
+        deviations = [t['deviation'] for t in with_baseline]
+        
+        # P95 deviation features
+        summary['avg_p95_deviation_pct'] = sum(d['p95_pct'] for d in deviations) / len(deviations)
+        summary['max_p95_deviation_pct'] = max(d['p95_pct'] for d in deviations)
+        summary['min_p95_deviation_pct'] = min(d['p95_pct'] for d in deviations)
+        
+        # Avg RT deviation features
+        summary['avg_avgrt_deviation_pct'] = sum(d['avg_rt_pct'] for d in deviations) / len(deviations)
+        summary['max_avgrt_deviation_pct'] = max(d['avg_rt_pct'] for d in deviations)
+        
+        # Error deviation
+        summary['avg_error_delta'] = sum(d['error_delta'] for d in deviations) / len(deviations)
+        summary['max_error_delta'] = max(d['error_delta'] for d in deviations)
+        
+        # Classifier thresholds (same as in features.py)
+        summary['pct_txn_critical_p95'] = (len([d for d in deviations if d['p95_pct'] > 50]) / len(with_baseline) * 100)
+        summary['pct_txn_degraded_p95'] = (len([d for d in deviations if 20 < d['p95_pct'] <= 50]) / len(with_baseline) * 100)
+        summary['pct_txn_critical_avgrt'] = (len([d for d in deviations if d['avg_rt_pct'] > 50]) / len(with_baseline) * 100)
+        summary['pct_txn_degraded_avgrt'] = (len([d for d in deviations if 20 < d['avg_rt_pct'] <= 50]) / len(with_baseline) * 100)
+        
+        summary['critical_deviations_count'] = len([d for d in deviations if d['p95_pct'] > 50])
+        summary['degraded_deviations_count'] = len([d for d in deviations if 20 < d['p95_pct'] <= 50])
     
     return {
         'testplan': testplan,
         'summary': summary,
         'transactions': transactions,
         'baseline_source': 'models/baselines.pkl (medians from passing runs)',
-        'baseline_grouping': f'test_type={test_type}, num_clients={num_clients}'
+        'baseline_grouping': f'test_type={test_type}, num_clients={num_clients}',
+        'available_fields': {
+            'per_transaction': ['p95', 'avg_rt', 'min_rt', 'max_rt', 'error_pct', 'total_count', 'pass_count', 'fail_count'],
+            'baseline_fields': ['p95', 'avg_rt', 'error_pct', 'throughput_per_user'],
+            'deviation_fields': ['p95_pct', 'avg_rt_pct', 'error_delta', 'p95_absolute', 'avg_rt_absolute']
+        }
     }
