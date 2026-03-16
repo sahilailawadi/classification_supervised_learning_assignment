@@ -303,7 +303,7 @@ if page == "💬 Chat Analysis":
     
     with col1:
         if st.button("📝 PO Sign-Off Report"):
-            st.session_state.pending_question = """Generate a release sign-off report for the most recent test for Product Owner review.
+            st.session_state.pending_question = """Find the most recent test run and generate a release sign-off report for Product Owner review.
 
 Include:
 - Classifier Prediction (PASS/FAIL) with confidence
@@ -317,7 +317,7 @@ Format: Executive summary style, non-technical language."""
     
     with col2:
         if st.button("🔬 Dev/QA Report"):
-            st.session_state.pending_question = """Generate a detailed technical report for the most recent test for Dev/QA teams.
+            st.session_state.pending_question = """Find the most recent test run and generate a detailed technical report for Dev/QA teams.
 
 Include:
 - Classifier prediction with feature importance
@@ -331,7 +331,7 @@ Format: Technical detail for engineers."""
     
     with col3:
         if st.button("📊 Stakeholder Summary"):
-            st.session_state.pending_question = """Generate a stakeholder summary for the most recent test.
+            st.session_state.pending_question = """Find the most recent test run and generate a stakeholder summary.
 
 Include:
 - Test result (PASS/FAIL)
@@ -479,17 +479,25 @@ elif page == "🔍 Deep Dive":
                 pred_class = pred_result['prediction']
                 st.metric(
                     "Prediction", 
-                    pred_class,
-                    delta="Ready" if pred_class == "PASS" else "Review Needed"
+                    pred_class
                 )
+                if pred_class == "PASS":
+                    st.success("✅ Ready")
+                else:
+                    st.warning("⚠️ Review Needed")
             with col2:
                 confidence = pred_result['confidence']
                 conf_level = "High" if confidence > 80 else "Moderate" if confidence > 60 else "Low"
                 st.metric(
                     "Confidence", 
-                    f"{confidence:.1f}%",
-                    delta=conf_level
+                    f"{confidence:.1f}%"
                 )
+                if confidence > 80:
+                    st.success(f"✅ {conf_level}")
+                elif confidence > 60:
+                    st.info(f"ℹ️ {conf_level}")
+                else:
+                    st.warning(f"⚠️ {conf_level}")
             with col3:
                 actual = pred_result.get('actual_result', 'N/A')
                 st.metric("Actual Result", actual)
@@ -520,9 +528,17 @@ elif page == "🔍 Deep Dive":
             # Show transaction data
             test_data = df[df['testplan'] == selected_test].sort_values('perc_95', ascending=False)
             with st.expander(f"📋 Transaction Data ({len(test_data)} rows)"):
-                st.dataframe(test_data[['transaction_name', 'perc_95', 'error_percentage', 
-                                        'avg_response_time', 'min_response', 'max_response']], 
-                            use_container_width=True)
+                # Select columns that exist in the dataframe
+                available_cols = ['transaction_name', 'perc_95', 'error_percentage', 'avg_response_time']
+                optional_cols = ['min_response', 'max_response', 'total_count', 'pass_count', 'fail_count']
+                
+                # Add optional columns if they exist
+                display_cols = available_cols.copy()
+                for col in optional_cols:
+                    if col in test_data.columns:
+                        display_cols.append(col)
+                
+                st.dataframe(test_data[display_cols], use_container_width=True)
             
             # Report generation (NEW - only show if PASS)
             if pred_result['prediction'] == "PASS":
