@@ -274,7 +274,7 @@ if page == "💬 Chat Analysis":
     st.markdown("---")
     st.markdown("**💡 Quick Questions (with MCP auto-tool routing):**")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         if st.button("📋 Last 5 tests?"):
@@ -289,6 +289,57 @@ if page == "💬 Chat Analysis":
     with col3:
         if st.button("📊 Pass rate?"):
             st.session_state.pending_question = "What is the overall pass rate?"
+            st.rerun()
+    
+    with col4:
+        if st.button("🔍 Summarize last test"):
+            st.session_state.pending_question = "Analyze the most recent test run. Show classifier prediction, key metrics, and whether it's ready for release."
+            st.rerun()
+    
+    # Report generation
+    st.markdown("---")
+    st.markdown("**📄 Generate Reports (Last Test):**")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📝 PO Sign-Off Report"):
+            st.session_state.pending_question = """Generate a release sign-off report for the most recent test for Product Owner review.
+
+Include:
+- Classifier Prediction (PASS/FAIL) with confidence
+- Overall performance vs baseline
+- Critical issues (if any)
+- Error analysis summary
+- Release recommendation (GO/NO-GO)
+
+Format: Executive summary style, non-technical language."""
+            st.rerun()
+    
+    with col2:
+        if st.button("🔬 Dev/QA Report"):
+            st.session_state.pending_question = """Generate a detailed technical report for the most recent test for Dev/QA teams.
+
+Include:
+- Classifier prediction with feature importance
+- Transaction-level performance breakdown
+- Top 5 slowest transactions with baselines
+- Error patterns and affected endpoints
+- Actionable debugging steps
+
+Format: Technical detail for engineers."""
+            st.rerun()
+    
+    with col3:
+        if st.button("📊 Stakeholder Summary"):
+            st.session_state.pending_question = """Generate a stakeholder summary for the most recent test.
+
+Include:
+- Test result (PASS/FAIL)
+- Key performance metrics vs targets
+- Any blockers or concerns
+- Timeline impact
+
+Format: Brief, business-focused."""
             st.rerun()
 
 # ============================================================================
@@ -421,18 +472,39 @@ elif page == "🔍 Deep Dive":
             # Display results
             st.markdown("---")
             
-            # Prediction metrics
+            # Prediction metrics (ENHANCED - more prominent)
+            st.markdown("### 🎯 Classifier Prediction")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Prediction", pred_result['prediction'])
+                pred_class = pred_result['prediction']
+                st.metric(
+                    "Prediction", 
+                    pred_class,
+                    delta="Ready" if pred_class == "PASS" else "Review Needed"
+                )
             with col2:
-                st.metric("Confidence", f"{pred_result['confidence']:.1f}%")
+                confidence = pred_result['confidence']
+                conf_level = "High" if confidence > 80 else "Moderate" if confidence > 60 else "Low"
+                st.metric(
+                    "Confidence", 
+                    f"{confidence:.1f}%",
+                    delta=conf_level
+                )
             with col3:
                 actual = pred_result.get('actual_result', 'N/A')
                 st.metric("Actual Result", actual)
             with col4:
-                match = "✅" if pred_result['prediction'] == actual else "❌"
-                st.metric("Match", match)
+                if actual != 'N/A':
+                    match = "✅ Correct" if pred_result['prediction'] == actual else "❌ Mismatch"
+                else:
+                    match = "⏳ Pending"
+                st.metric("Validation", match)
+            
+            # Show prediction interpretation
+            if pred_result['prediction'] == "PASS":
+                st.success("✅ **Classifier Assessment:** Test meets quality thresholds for release")
+            else:
+                st.error("⚠️ **Classifier Assessment:** Test shows quality concerns - review recommended")
             
             st.markdown("---")
             
@@ -451,6 +523,99 @@ elif page == "🔍 Deep Dive":
                 st.dataframe(test_data[['transaction_name', 'perc_95', 'error_percentage', 
                                         'avg_response_time', 'min_response', 'max_response']], 
                             use_container_width=True)
+            
+            # Report generation (NEW - only show if PASS)
+            if pred_result['prediction'] == "PASS":
+                st.markdown("---")
+                st.markdown("### 📄 Generate Sign-Off Reports")
+                st.markdown("Generate stakeholder-ready reports based on this analysis:")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("📝 Product Owner Report", key="po_report"):
+                        with st.spinner("Generating PO sign-off report..."):
+                            report_question = f"""Generate a release sign-off report for test {selected_test} for Product Owner review.
+
+Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
+
+Create a professional report with:
+1. Executive Summary (2-3 sentences)
+2. Test Result: PASS/FAIL with confidence level
+3. Performance Summary: Compare key metrics vs baseline
+4. Risk Assessment: Any concerns or degradations
+5. Release Recommendation: GO/NO-GO with justification
+
+Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
+                            
+                            report, tokens = ask_about_test(selected_test, report_question)
+                            st.markdown("#### 📝 Product Owner Sign-Off Report")
+                            st.markdown(report)
+                            st.download_button(
+                                "⬇️ Download Report",
+                                report,
+                                file_name=f"PO_SignOff_{selected_test}.md",
+                                mime="text/markdown",
+                                key="download_po"
+                            )
+                
+                with col2:
+                    if st.button("🔬 Engineering Report", key="eng_report"):
+                        with st.spinner("Generating technical report..."):
+                            report_question = f"""Generate a detailed engineering report for test {selected_test} for Dev/QA teams.
+
+Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
+
+Create a technical report with:
+1. Classifier Analysis: Prediction with key feature values
+2. Performance Breakdown: Transaction-level analysis with baselines
+3. Technical Details: Slowest endpoints, error patterns
+4. Action Items: Specific debugging steps or code areas to review
+5. Test Coverage: Transactions tested, any gaps
+
+Format: Technical depth suitable for engineers."""
+                            
+                            report, tokens = ask_about_test(selected_test, report_question)
+                            st.markdown("#### 🔬 Engineering Report")
+                            st.markdown(report)
+                            st.download_button(
+                                "⬇️ Download Report",
+                                report,
+                                file_name=f"Engineering_{selected_test}.md",
+                                mime="text/markdown",
+                                key="download_eng"
+                            )
+                
+                with col3:
+                    if st.button("📊 QA Report", key="qa_report"):
+                        with st.spinner("Generating QA report..."):
+                            report_question = f"""Generate a QA-focused report for test {selected_test}.
+
+Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
+
+Create a QA report with:
+1. Test Summary: What was tested, scope, duration
+2. Quality Metrics: P95, error rates, throughput vs baseline
+3. Pass/Fail Analysis: Why classifier marked as PASS
+4. Edge Cases: Any boundary conditions or anomalies
+5. Retest Recommendations: Areas that need additional validation
+6. Sign-Off Status: Ready for release or needs follow-up
+
+Format: QA perspective, focus on test quality and coverage."""
+                            
+                            report, tokens = ask_about_test(selected_test, report_question)
+                            st.markdown("#### 📊 QA Report")
+                            st.markdown(report)
+                            st.download_button(
+                                "⬇️ Download Report",
+                                report,
+                                file_name=f"QA_{selected_test}.md",
+                                mime="text/markdown",
+                                key="download_qa"
+                            )
+            else:
+                st.markdown("---")
+                st.info("💡 **Note:** Sign-off report generation is available for tests predicted as PASS. This test requires further review.")
 
 # ============================================================================
 # PAGE: Compare Tests
