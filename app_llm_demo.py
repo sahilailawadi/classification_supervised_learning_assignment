@@ -305,81 +305,240 @@ if page == "💬 Chat Analysis":
     
     with col1:
         if st.button("📝 PO Sign-Off Report"):
-            st.session_state.pending_question = """Find the most recent test run and generate a release sign-off report for Product Owner review.
+            # Pre-fetch actual data to prevent hallucination
+            analyzer = st.session_state.analyzer
+            tests = analyzer.data_source.list_tests(limit=1)
+            if tests:
+                latest_test = tests[0]
+                
+                # Get baseline comparison with ACTUAL data
+                from mcp_server.tools.baseline import get_baseline_comparison
+                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+                
+                # Get prediction
+                pred_result = analyzer.predict_test(latest_test)
+                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+                
+                # Get test details
+                test_df = analyzer.data_source.get_test_by_id(latest_test)
+                test_summary = test_df.groupby('testplan').agg({
+                    'perc_95': 'mean',
+                    'error_percentage': 'mean',
+                    'transaction_name': 'count',
+                    'end_time': 'first',
+                    'exit_code': 'first'
+                }).iloc[0]
+                
+                if 'error' not in baseline_result:
+                    baseline_summary = baseline_result['summary']
+                    
+                    # Format critical issues
+                    critical_txns = [t for t in baseline_result['transactions'] 
+                                   if t['has_baseline'] and t['deviation']['p95_pct'] > 50]
+                    critical_list = "\\n".join([f"- {t['name']}: {t['actual']['p95']:.0f}ms vs {t['baseline']['p95']:.0f}ms baseline ({t['deviation']['p95_pct']:+.1f}%)" 
+                                              for t in sorted(critical_txns, key=lambda x: x['deviation']['p95_pct'], reverse=True)[:5]])
+                else:
+                    baseline_summary = {}
+                    critical_list = "No baseline data available"
+                
+                report_question = f"""Generate a release sign-off report for test {latest_test} for Product Owner review.
 
-Step 1: Use query_tests to get the latest test
-Step 2: Use get_test_detail to get full test information including throughput
-Step 3: Use get_baseline_comparison to compare with baseline
+ACTUAL TEST DATA (DO NOT MODIFY):
 
-Include in Executive Summary table:
-- Test Name
-- P95 Response Time
-- Error Rate
-- Number of Transactions
-- Total Throughput (requests/sec)
-- Result (PASS/FAIL)
-- End Time
-- Classifier Prediction with Confidence %
+Test Overview:
+- Test ID: {latest_test}
+- End Time: {test_summary['end_time']}
+- Result: {'PASS' if test_summary['exit_code'] == 1 else 'FAIL'}
+- Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
+- Transactions Tested: {int(test_summary['transaction_name'])}
+- Average P95: {test_summary['perc_95']:.0f}ms
+- Error Rate: {test_summary['error_percentage']:.2f}%
 
-Then provide:
-- Overall performance vs baseline summary
-- Critical issues (if any)
-- Release recommendation (GO/NO-GO) in bold
+Performance vs Baseline:
+- Average P95 Deviation: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
+- Critical Deviations (>50%): {baseline_summary.get('critical_deviations_count', 0)} transactions
 
-Format: Executive summary style, non-technical language."""
+Critical Transactions:
+{critical_list if critical_list else 'None - all transactions within acceptable limits'}
+
+Create a professional report with:
+
+1. Executive Summary (2-3 sentences about overall performance)
+
+2. Test Overview (use the EXACT data above - do not make up transaction names)
+
+3. Performance Assessment:
+   - Summarize performance vs baseline
+   - Highlight any critical issues
+
+4. Risk Assessment:
+   - High/Medium/Low risk classification
+   - Impact on users
+
+5. **Release Recommendation** (bold):
+   - **GO** / **NO-GO** / **GO WITH CAUTION**
+   - Justification in 2-3 sentences
+
+Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
+                
+                st.session_state.pending_question = report_question
+            else:
+                st.session_state.pending_question = "No tests found in database."
             st.rerun()
     
     with col2:
         if st.button("🔬 Dev/QA Report"):
-            st.session_state.pending_question = """Find the most recent test run and generate a detailed technical report for Dev/QA teams.
+            # Pre-fetch actual data to prevent hallucination
+            analyzer = st.session_state.analyzer
+            tests = analyzer.data_source.list_tests(limit=1)
+            if tests:
+                latest_test = tests[0]
+                
+                # Get baseline comparison with ACTUAL data
+                from mcp_server.tools.baseline import get_baseline_comparison
+                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+                
+                # Get prediction
+                pred_result = analyzer.predict_test(latest_test)
+                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+                
+                # Format transaction data into table
+                if 'error' not in baseline_result:
+                    txn_table = "\\n| Transaction | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% | Status |\\n"
+                    txn_table += "|------------|-----------|-------------|-----|--------------|----------------|-----|---------|--------|\\n"
+                    
+                    for txn in baseline_result['transactions']:
+                        if txn['has_baseline']:
+                            status = "⚠️ CRITICAL" if txn['deviation']['p95_pct'] > 50 else "⚠️ DEGRADED" if txn['deviation']['p95_pct'] > 20 else "✅ PASS"
+                            txn_table += f"| {txn['name']} | {txn['actual']['p95']:.0f}ms | {txn['baseline']['p95']:.0f}ms | {txn['deviation']['p95_pct']:+.1f}% | {txn['actual']['avg_rt']:.0f}ms | {txn['baseline']['avg_rt']:.0f}ms | {txn['deviation']['avg_rt_pct']:+.1f}% | {txn['actual']['error_pct']:.1f}% | {status} |\\n"
+                    
+                    baseline_summary = baseline_result['summary']
+                else:
+                    txn_table = "No baseline data available"
+                    baseline_summary = {}
+                
+                report_question = f"""Generate a detailed engineering report for test {latest_test} for Dev/QA teams.
 
-Step 1: Use query_tests to get the latest test
-Step 2: Use get_baseline_comparison to get transaction-level data with baselines
+Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
 
-MUST include Transaction-level Performance Breakdown table with ACTUAL DATA:
-| Transaction Name | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% |
+ACTUAL BASELINE COMPARISON DATA (DO NOT MODIFY - USE EXACT TRANSACTION NAMES):
 
-Show ALL transactions, not placeholders or "...". Use the data from get_baseline_comparison.
+Test Type: {baseline_summary.get('test_type', 'N/A')}
+Number of Clients: {baseline_summary.get('num_clients', 'N/A')}
+Total Transactions: {baseline_summary.get('total_transactions', 'N/A')}
+Transactions with Baseline: {baseline_summary.get('transactions_with_baseline', 'N/A')}
 
-Also include:
-- Classifier prediction with top 3 most important features
-- Top 5 slowest transactions
-- Error patterns (if any)
-- Actionable debugging steps for degraded transactions
+Classifier Features:
+- Avg P95 Deviation: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
+- Max P95 Deviation: {baseline_summary.get('max_p95_deviation_pct', 0):.1f}%
+- Critical Transactions (>50%): {baseline_summary.get('pct_txn_critical_p95', 0):.1f}% ({baseline_summary.get('critical_deviations_count', 0)} txns)
+- Degraded Transactions (20-50%): {baseline_summary.get('pct_txn_degraded_p95', 0):.1f}% ({baseline_summary.get('degraded_deviations_count', 0)} txns)
 
-Format: Technical detail for engineers."""
+Transaction-level Performance Breakdown (ACTUAL DATA - DO NOT CHANGE TRANSACTION NAMES):
+{txn_table}
+
+Create a technical report with:
+
+1. Classifier Analysis:
+   - Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
+   - Summarize the classifier features above
+   
+2. Transaction-level Performance:
+   - Include the EXACT table above (do not modify numbers or transaction names)
+   - Highlight critical and degraded transactions
+   
+3. Critical Issues Analysis:
+   - List transactions with >50% P95 degradation
+   - Explain likely root causes
+   
+4. Action Items:
+   - Specific debugging steps for worst performers
+   - Code areas to investigate
+   - Optimization recommendations
+
+Format: Technical depth suitable for engineers. Use the ACTUAL data provided above - do not make up transaction names like Login, Search, Checkout."""
+                
+                st.session_state.pending_question = report_question
+            else:
+                st.session_state.pending_question = "No tests found in database."
             st.rerun()
     
     with col3:
         if st.button("📊 Stakeholder Summary"):
-            st.session_state.pending_question = """Find the most recent test run and generate a stakeholder summary.
+            # Pre-fetch actual data to prevent hallucination
+            analyzer = st.session_state.analyzer
+            tests = analyzer.data_source.list_tests(limit=1)
+            if tests:
+                latest_test = tests[0]
+                
+                # Get baseline comparison with ACTUAL data
+                from mcp_server.tools.baseline import get_baseline_comparison
+                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+                
+                # Get prediction
+                pred_result = analyzer.predict_test(latest_test)
+                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+                
+                # Get test details
+                test_df = analyzer.data_source.get_test_by_id(latest_test)
+                
+                if 'error' not in baseline_result:
+                    summary = baseline_result['summary']
+                    
+                    # Format quality metrics table (top 5 by deviation)
+                    txns_sorted = sorted([t for t in baseline_result['transactions'] if t['has_baseline']], 
+                                       key=lambda x: x['deviation']['p95_pct'], reverse=True)[:5]
+                    qa_table = "\\n| Transaction | P95 | Baseline P95 | Δ% | Status |\\n"
+                    qa_table += "|------------|-----|-------------|-----|--------|\\n"
+                    for txn in txns_sorted:
+                        status = "❌ CRITICAL" if txn['deviation']['p95_pct'] > 50 else "⚠️ WARN" if txn['deviation']['p95_pct'] > 20 else "✅ PASS"
+                        qa_table += f"| {txn['name']} | {txn['actual']['p95']:.0f}ms | {txn['baseline']['p95']:.0f}ms | {txn['deviation']['p95_pct']:+.1f}% | {status} |\\n"
+                else:
+                    summary = {}
+                    qa_table = "No baseline data available"
+                
+                report_question = f"""Generate a stakeholder summary for test {latest_test}.
 
-Step 1: Use query_tests to get the latest test
-Step 2: Use get_test_detail to get test info
-Step 3: Use get_baseline_comparison to get performance vs baseline
+ACTUAL TEST DATA (DO NOT MODIFY - USE EXACT TRANSACTION NAMES):
 
-MUST include:
+Test Summary:
+- Test ID: {latest_test}
+- Classifier: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
+- Total Transactions: {summary.get('total_transactions', 'N/A')}
+- Transactions with Baseline: {summary.get('transactions_with_baseline', 'N/A')}
+
+Quality Metrics:
+- Avg P95 Deviation: {summary.get('avg_p95_deviation_pct', 0):.1f}%
+- Max P95 Deviation: {summary.get('max_p95_deviation_pct', 0):.1f}%
+- Critical Transactions: {summary.get('critical_deviations_count', 0)}
+- Degraded Transactions: {summary.get('degraded_deviations_count', 0)}
+
+Top 5 Transactions by Performance (ACTUAL DATA):
+{qa_table}
+
+Create a stakeholder summary with:
+
 1. Test Summary:
-   - Test ID and timestamp
-   - Classifier Prediction: PASS/FAIL (XX.X% confidence)
-   - Overall Result
+   - Use the data above
+   - Classifier confidence interpretation
 
-2. Key Metrics Summary:
-   - Transactions tested
-   - Average P95 vs baseline
-   - Error rate
-   - Critical deviations count
+2. Transaction Highlights:
+   - Include the EXACT table above (do not make up transaction names)
+   - Pass/Fail breakdown
+   
+3. Why Classifier Marked as {pred_result['prediction']}:
+   - Explain based on actual metrics
+   - Reference specific transactions from the table above
 
-3. Transaction Highlights (top 5 worst performing):
-   Use ACTUAL DATA from get_baseline_comparison in table format:
-   | Transaction | Actual P95 | Baseline P95 | Δ% | Status |
+4. **Release Recommendation** (bold):
+   - Ready for release / Needs review / Blocked
+   - Brief justification
 
-4. **Release Recommendation** (in bold):
-   - GO if PASS and no critical issues
-   - NO-GO if FAIL or critical degradations
-   - WITH CAUTION if borderline
-
-Format: Brief, business-focused, use actual numbers."""
+Format: Brief, business-focused. Use ACTUAL transaction names from the data above."""
+                
+                st.session_state.pending_question = report_question
+            else:
+                st.session_state.pending_question = "No tests found in database."
             st.rerun()
 
 # ============================================================================
