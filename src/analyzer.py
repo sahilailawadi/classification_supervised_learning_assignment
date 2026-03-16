@@ -40,6 +40,8 @@ from dotenv import load_dotenv
 from src.llm_provider import get_llm_provider, BaseLLMProvider
 from src.data_source import get_data_source, BaseDataSource
 
+# MCP tools imported lazily to avoid circular dependency
+
 # Load environment
 load_dotenv()
 
@@ -549,10 +551,15 @@ Use tables and bullet points for clarity."""
         """
         Universal method to ask LLM questions about test data.
         
+        NOW WITH MCP TOOL INTEGRATION (Phase 2):
+        - Automatically routes questions to appropriate MCP tools
+        - Fetches real data instead of providing generic statistics
+        - Supports natural language queries like "last 5 tests", "failed tests"
+        
         This is the main interface - handles all query types in one method:
         - Specific test questions (provide about_test)
         - Custom data questions (provide data_context)  
-        - General dataset questions (provide neither)
+        - Natural language queries (LLM + MCP tools fetch data automatically)
         
         Args:
             question: Your question in natural language
@@ -561,48 +568,198 @@ Use tables and bullet points for clarity."""
             conversation_history: Optional list of (question, answer) tuples
             
         Returns:
-            Dict with 'answer' (str) and 'tokens_used' (int or None)
+            Dict with 'answer' (str), 'tokens_used' (int or None), and 'tools_used' (list)
             
         Examples:
-            # Ask about specific test
+            # Ask about specific test (backward compatible)
             result = analyzer.ask("What are the slowest transactions?", about_test=0)
-            print(result['answer'])
             
-            # Ask about custom data (e.g., "last 3 tests")
-            last_3 = df.groupby('testplan').agg({
-                'end_time': 'first',
-                'exit_code': 'first'
-            }).sort_values('end_time', ascending=False).head(3)
-            result = analyzer.ask(
-                "What are the last 3 test runs?",
-                data_context=last_3.to_string()
-            )
+            # Natural language queries (NEW - uses MCP tools automatically)
+            result = analyzer.ask("What are the last 5 test runs?")
+            result = analyzer.ask("Show me all failed tests")
+            result = analyzer.ask("Compare LoadTest_001 and LoadTest_002")
             
-            # General question (includes dataset overview)
+            # General question
             result = analyzer.ask("What's the overall pass rate?")
         """
-        # Determine what context to provide
+        # Backward compatibility: explicit about_test or data_context
         if about_test is not None:
-            # User wants to ask about a specific test
             context = self.get_test_context(about_test)
+            response = self.ask_about_data(context, question, conversation_history)
+            response['tools_used'] = []
+            return response
+            
         elif data_context is not None:
-            # User provided custom data context
-            context = data_context
+            response = self.ask_about_data(data_context, question, conversation_history)
+            response['tools_used'] = []
+            return response
+        
+        # NEW: Intelligent routing with MCP tools
+        print(f"🤔 Analyzing question: '{question[:80]}{'...' if len(question) > 80 else ''}'")
+        
+        # Step 1: Use LLM to determine which tools to call
+        tool_selection = self._determine_tools_needed(question)
+        
+        # Step 2: Execute the appropriate MCP tools
+        tool_results = []
+        for tool_call in tool_selection['tools']:
+            print(f"   🔧 Calling {tool_call['name']}({tool_call['params']})")
+            result = self._execute_mcp_tool(tool_call['name'], tool_call['params'])
+            tool_results.append({
+                'tool': tool_call['name'],
+                'params': tool_call['params'],
+                'result': result
+            })
+        
+        # Step 3: Format tool results as context for LLM
+        context = self._format_tool_results(tool_results, question)
+        
+        # Step 4: Ask LLM with the fetched data
+        response = self.ask_about_data(context, question, conversation_history)
+        response['tools_used'] = [t['tool'] for t in tool_results]
+        
+        return response
+    
+    def _determine_tools_needed(self, question: str) -> Dict[str, Any]:
+        """
+        Use LLM to analyze the question and determine which MCP tools to call.
+        
+        Returns dict with 'tools' list containing tool name and parameters.
+        """
+        system_prompt = """You are a query planner for a performance test analysis system.
+Analyze the user's question and determine which tools to call to fetch the necessary data.
+
+Available tools:
+1. query_tests(limit, exit_code, sort_by, ascending)
+   - Get list of test runs
+   - Use for: "last N tests", "recent tests", "failed tests", "show me tests"
+   - Parameters:
+     * limit: number of tests (default 10)
+     * exit_code: filter by result (1=PASS, 2=FAIL, omit for all)
+     * sort_by: "end_time" (most recent), "perc_95" (slowest), etc.
+     * ascending: false for most recent/slowest first
+
+2. get_test_detail(testplan)
+   - Get comprehensive details about one test
+   - Use for: questions about a specific test (id mentioned)
+   - Parameters:
+     * testplan: the test identifier
+
+3. compare_tests(testplan1, testplan2)
+   - Compare two tests side-by-side
+   - Use for: "compare", "difference between", "what changed"
+   - Parameters:
+     * testplan1: first test id
+     * testplan2: second test id
+
+Respond with JSON:
+{
+  "reasoning": "brief explanation of tool selection",
+  "tools": [
+    {"name": "tool_name", "params": {...}}
+  ]
+}
+
+If the question needs data but you can't extract specific test IDs, use query_tests to list tests first.
+If it's a general statistics question (pass rate, total tests), return empty tools list."""
+
+        user_prompt = f"""Question: {question}
+
+Which tools should be called to answer this question?"""
+
+        response = self.llm.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.1
+        )
+        
+        # Parse JSON response
+        try:
+            result = json.loads(response.content)
+            print(f"   💡 Tool plan: {result['reasoning']}")
+            return result
+        except json.JSONDecodeError:
+            print(f"   ⚠️  Failed to parse tool selection, using fallback")
+            # Fallback: query recent tests
+            return {
+                'reasoning': 'Fallback - showing recent tests',
+                'tools': [{'name': 'query_tests', 'params': {'limit': 5}}]
+            }
+    
+    def _execute_mcp_tool(self, tool_name: str, params: Dict[str, Any]) -> Any:
+        """Execute an MCP tool with given parameters."""
+        # Lazy import to avoid circular dependency
+        from mcp_server.tools.query import query_tests
+        from mcp_server.tools.detail import get_test_detail
+        from mcp_server.tools.compare import compare_tests
+        
+        if tool_name == 'query_tests':
+            return query_tests(
+                limit=params.get('limit', 10),
+                exit_code=params.get('exit_code'),
+                sort_by=params.get('sort_by', 'end_time'),
+                ascending=params.get('ascending', False)
+            )
+        elif tool_name == 'get_test_detail':
+            return get_test_detail(params['testplan'])
+        elif tool_name == 'compare_tests':
+            return compare_tests(params['testplan1'], params['testplan2'])
         else:
-            # General question - provide dataset overview
+            raise ValueError(f"Unknown tool: {tool_name}")
+    
+    def _format_tool_results(self, tool_results: List[Dict], question: str) -> str:
+        """Format MCP tool results into context string for LLM."""
+        if not tool_results:
+            # No tools used - provide general dataset overview
             df = self.data_source.load_test_data()
-            context = f"""Dataset Overview:
+            return f"""Dataset Overview:
 - Total tests: {df['testplan'].nunique()}
 - Total transactions/rows: {len(df):,}
-- Unique transaction types: {df['transaction_name'].nunique()}
 - Date range: {df['end_time'].min()} to {df['end_time'].max()}
-- Pass/Fail distribution: {df.groupby('exit_code')['testplan'].nunique().to_dict()}
-
-Available transaction types:
-{', '.join(df['transaction_name'].unique()[:20])}{'...' if df['transaction_name'].nunique() > 20 else ''}"""
-    
-        # Ask LLM with the context
-        return self.ask_about_data(context, question, conversation_history)
+- Pass/Fail: {df[df['exit_code']==1]['testplan'].nunique()} pass, {df[df['exit_code']!=1]['testplan'].nunique()} fail"""
+        
+        context_parts = [f"Query: {question}\n", "Data retrieved:\n"]
+        
+        for tr in tool_results:
+            context_parts.append(f"\n=== {tr['tool']}({tr['params']}) ===\n")
+            
+            if tr['tool'] == 'query_tests':
+                result = tr['result']
+                context_parts.append(f"Found {result['count']} tests (total: {result['total_in_dataset']})\n")
+                for i, test in enumerate(result['tests'], 1):
+                    context_parts.append(
+                        f"{i}. {test['testplan']}: "
+                        f"P95={test['avg_p95']:.0f}ms, "
+                        f"Errors={test['avg_error_pct']:.1f}%, "
+                        f"Txns={test['num_transactions']}, "
+                        f"Result={test['result']} "
+                        f"({test['end_time']})\n"
+                    )
+            
+            elif tr['tool'] == 'get_test_detail':
+                result = tr['result']
+                # Use the formatted_context from the tool
+                if 'formatted_context' in result:
+                    context_parts.append(result['formatted_context'])
+                else:
+                    context_parts.append(json.dumps(result, indent=2))
+            
+            elif tr['tool'] == 'compare_tests':
+                result = tr['result']
+                diff = result['differences']
+                context_parts.append(
+                    f"Test 1: {result['test1']['testplan']}\n"
+                    f"  P95: {result['test1']['p95_ms']:.0f}ms, Prediction: {result['test1']['prediction']}\n"
+                    f"Test 2: {result['test2']['testplan']}\n"
+                    f"  P95: {result['test2']['p95_ms']:.0f}ms, Prediction: {result['test2']['prediction']}\n"
+                    f"Differences:\n"
+                    f"  P95 delta: {diff['p95_delta']:+.0f}ms ({diff['p95_pct_change']:+.1%})\n"
+                    f"  Error delta: {diff['error_delta']:+.1f}%\n"
+                )
+        
+        return ''.join(context_parts)
     
     def ask_about_data(
         self,
