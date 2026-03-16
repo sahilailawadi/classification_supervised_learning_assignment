@@ -527,6 +527,10 @@ elif page == "🔍 Deep Dive":
                     st.warning("⚠️ Review Needed")
             with col2:
                 confidence = pred_result['confidence']
+                # Handle confidence as decimal (0-1) or percentage (0-100)
+                if confidence < 2:  # If it's a decimal, convert to percentage
+                    confidence = confidence * 100
+                
                 conf_level = "High" if confidence > 80 else "Moderate" if confidence > 60 else "Low"
                 st.metric(
                     "Confidence", 
@@ -591,22 +595,26 @@ elif page == "🔍 Deep Dive":
             
             with col1:
                 if st.button("📝 PO Report", key="quick_po", use_container_width=True):
-                    st.session_state.pending_deepdive_question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    st.session_state.pending_deepdive_question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
                     st.rerun()
             
             with col2:
                 if st.button("🔬 Eng Report", key="quick_eng", use_container_width=True):
-                    st.session_state.pending_deepdive_question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    st.session_state.pending_deepdive_question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {conf_pct:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
                     st.rerun()
             
             with col3:
                 if st.button("📊 QA Report", key="quick_qa", use_container_width=True):
-                    st.session_state.pending_deepdive_question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {pred_result['confidence']:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    st.session_state.pending_deepdive_question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
                     st.rerun()
             
             with col4:
                 if st.button("❓ Explain Prediction", key="quick_explain", use_container_width=True):
-                    st.session_state.pending_deepdive_question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {pred_result['confidence']:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
+                    conf_pct = confidence if confidence >= 2 else confidence * 100
+                    st.session_state.pending_deepdive_question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
                     st.rerun()
             
             # Chat input
@@ -734,7 +742,8 @@ elif page == "⚖️ Compare Tests":
                     with subcol1:
                         st.metric("Prediction", pred1['prediction'])
                     with subcol2:
-                        st.metric("Confidence", f"{pred1['confidence']:.1f}%")
+                        conf1 = pred1['confidence'] if pred1['confidence'] >= 2 else pred1['confidence'] * 100
+                        st.metric("Confidence", f"{conf1:.1f}%")
                     with subcol3:
                         actual1 = pred1.get('actual_result', 'N/A')
                         match1 = "✅" if pred1['prediction'] == actual1 else "❌"
@@ -747,7 +756,8 @@ elif page == "⚖️ Compare Tests":
                     with subcol1:
                         st.metric("Prediction", pred2['prediction'])
                     with subcol2:
-                        st.metric("Confidence", f"{pred2['confidence']:.1f}%")
+                        conf2 = pred2['confidence'] if pred2['confidence'] >= 2 else pred2['confidence'] * 100
+                        st.metric("Confidence", f"{conf2:.1f}%")
                     with subcol3:
                         actual2 = pred2.get('actual_result', 'N/A')
                         match2 = "✅" if pred2['prediction'] == actual2 else "❌"
