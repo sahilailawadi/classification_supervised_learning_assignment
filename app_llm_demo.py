@@ -69,46 +69,31 @@ def initialize_system():
     return True
 
 def ask_llm_question(question: str, context: str = ""):
-    """Send question to LLM and get response with conversation history"""
+    """
+    Send question to LLM with MCP Phase 2 tool integration.
+    
+    NOW USES: analyzer.ask() which automatically calls MCP tools as needed!
+    - "What are the last 5 tests?" → auto-calls query_tests
+    - "Show failed tests" → auto-calls query_tests(exit_code=2)
+    - General questions → provides dataset overview
+    """
     analyzer = st.session_state.analyzer
-    df = st.session_state.df
     conversation_history = st.session_state.conversation_history
     
-    # Build context
-    system_prompt = """You are an expert performance test analyst. 
-    
-Answer questions about test results, trends, and patterns. Be concise but informative.
-Use bullet points and highlight key insights. Format numbers clearly.
-Maintain conversation context and reference previous questions when relevant."""
-
-    context_parts = [
-        f"Dataset: {df['testplan'].nunique()} tests, {len(df):,} transactions",
-        f"Transactions types: {df['transaction_name'].nunique()}",
-        f"Date range: {df['end_time'].min()} to {df['end_time'].max()}"
-    ]
-    
-    if context:
-        context_parts.append(f"\nAdditional context:\n{context}")
-    
-    # Build messages with conversation history
-    messages = [{"role": "system", "content": system_prompt}]
-    
-    # Add conversation history (last 5 exchanges to keep context manageable)
-    for prev_q, prev_a in conversation_history[-5:]:
-        messages.append({"role": "user", "content": prev_q})
-        messages.append({"role": "assistant", "content": prev_a})
-    
-    # Add current question with dataset context
-    current_prompt = "\n".join(context_parts) + f"\n\nQuestion: {question}"
-    messages.append({"role": "user", "content": current_prompt})
-    
-    # Query LLM
     try:
-        response = analyzer.llm.chat(
-            messages=messages,
-            temperature=0.7
+        # Use unified ask() method with MCP tool integration
+        # If context provided, pass it; otherwise let ask() handle it
+        result = analyzer.ask(
+            question,
+            data_context=context if context else None,
+            conversation_history=conversation_history
         )
-        return response.content, response.tokens_used
+        
+        # Extract tools used for display
+        tools_used = result.get('tools_used', [])
+        tools_info = f" (Tools: {', '.join(tools_used)})" if tools_used else ""
+        
+        return result['answer'] + f"\n\n*{tools_info}*", result['tokens_used']
     except Exception as e:
         return f"❌ Error: {e}", 0
 
@@ -207,14 +192,15 @@ if not initialize_system():
     st.stop()
 
 st.markdown('<p class="main-header">🤖 LLM-Augmented Test Analysis</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Ask questions about your performance tests in natural language</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Ask questions in natural language • MCP Phase 2: Auto data fetching with tool routing</p>', unsafe_allow_html=True)
 
 # ============================================================================
 # PAGE: Chat Analysis
 # ============================================================================
 if page == "💬 Chat Analysis":
     st.markdown("### 💬 Ask Questions About Your Tests")
-    st.markdown("Ask anything: *'What are the slowest transactions?'*, *'Why did LoadTest_X fail?'*, *'Show trends'*")
+    st.markdown("**MCP Phase 2 Enabled:** Ask naturally and tools fetch data automatically!")
+    st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
     
     # Chat history
     chat_container = st.container()
@@ -246,30 +232,30 @@ if page == "💬 Chat Analysis":
     
     # Quick questions
     st.markdown("---")
-    st.markdown("**💡 Quick Questions:**")
+    st.markdown("**💡 Quick Questions (with MCP auto-tool routing):**")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🐌 Slowest transactions?"):
+        if st.button("📋 Last 5 tests?"):
             st.session_state.conversation_history.append((
-                "What are the top 5 slowest transactions?",
+                "What are the last 5 test runs?",
                 "⏳ Processing..."
             ))
             st.rerun()
     
     with col2:
-        if st.button("❌ Common failures?"):
+        if st.button("❌ Failed tests?"):
             st.session_state.conversation_history.append((
-                "What patterns do you see in failed tests?",
+                "Show me all failed tests",
                 "⏳ Processing..."
             ))
             st.rerun()
     
     with col3:
-        if st.button("📊 Performance trends?"):
+        if st.button("📊 Pass rate?"):
             st.session_state.conversation_history.append((
-                "Are there any performance trends over time?",
+                "What is the overall pass rate?",
                 "⏳ Processing..."
             ))
             st.rerun()
