@@ -170,6 +170,11 @@ def ask_with_data(data_context: str, question: str):
     except Exception as e:
         return f"❌ Error: {e}", 0
 
+# Initialize system ONCE before sidebar (prevents reload on navigation)
+if not initialize_system():
+    st.error("System initialization failed")
+    st.stop()
+
 # Sidebar
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
@@ -186,33 +191,28 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📊 Quick Stats")
     
-    if initialize_system():
-        df = st.session_state.df
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Tests", df['testplan'].nunique())
-            st.metric("Transactions", df['transaction_name'].nunique())
-        with col2:
-            pass_count = df[df['exit_code'] == 1]['testplan'].nunique()
-            fail_count = df[df['exit_code'] != 1]['testplan'].nunique()
-            st.metric("PASS", pass_count)
-            st.metric("FAIL", fail_count)
-        
-        st.markdown("---")
-        st.markdown("### 🎯 Navigation")
-        page = st.radio(
-            "Choose a view:",
-            ["💬 Chat Analysis", "📈 Test Overview", "🔍 Deep Dive", "⚖️ Compare Tests"],
-            label_visibility="collapsed"
-        )
-    else:
-        page = None
-        st.error("System initialization failed")
+    # Use cached data (already initialized above)
+    df = st.session_state.df
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Tests", df['testplan'].nunique())
+        st.metric("Transactions", df['transaction_name'].nunique())
+    with col2:
+        pass_count = df[df['exit_code'] == 1]['testplan'].nunique()
+        fail_count = df[df['exit_code'] != 1]['testplan'].nunique()
+        st.metric("PASS", pass_count)
+        st.metric("FAIL", fail_count)
+    
+    st.markdown("---")
+    st.markdown("### 🎯 Navigation")
+    page = st.radio(
+        "Choose a view:",
+        ["💬 Chat Analysis", "📈 Test Overview", "🔍 Deep Dive", "⚖️ Compare Tests"],
+        label_visibility="collapsed"
+    )
 
-# Main content
-if not initialize_system():
-    st.stop()
+# Main content (already checked initialization above)
 
 st.markdown('<p class="main-header">🤖 LLM-Augmented Test Analysis</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Ask questions in natural language • MCP Phase 2: Auto data fetching with tool routing</p>', unsafe_allow_html=True)
@@ -407,7 +407,8 @@ elif page == "🔍 Deep Dive":
     with col2:
         analyze_button = st.button("🔍 Analyze", type="primary")
     
-    if analyze_button or (selected_test and selected_test != st.session_state.current_test):
+    # Only analyze on button click (removed automatic analysis on selection change)
+    if analyze_button:
         st.session_state.current_test = selected_test
         
         with st.spinner("🤖 Analyzing test..."):
