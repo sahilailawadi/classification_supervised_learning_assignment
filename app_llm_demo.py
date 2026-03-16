@@ -305,12 +305,24 @@ if page == "💬 Chat Analysis":
         if st.button("📝 PO Sign-Off Report"):
             st.session_state.pending_question = """Find the most recent test run and generate a release sign-off report for Product Owner review.
 
-Include:
-- Classifier Prediction (PASS/FAIL) with confidence
-- Overall performance vs baseline
+Step 1: Use query_tests to get the latest test
+Step 2: Use get_test_detail to get full test information including throughput
+Step 3: Use get_baseline_comparison to compare with baseline
+
+Include in Executive Summary table:
+- Test Name
+- P95 Response Time
+- Error Rate
+- Number of Transactions
+- Total Throughput (requests/sec)
+- Result (PASS/FAIL)
+- End Time
+- Classifier Prediction with Confidence %
+
+Then provide:
+- Overall performance vs baseline summary
 - Critical issues (if any)
-- Error analysis summary
-- Release recommendation (GO/NO-GO)
+- Release recommendation (GO/NO-GO) in bold
 
 Format: Executive summary style, non-technical language."""
             st.rerun()
@@ -319,12 +331,19 @@ Format: Executive summary style, non-technical language."""
         if st.button("🔬 Dev/QA Report"):
             st.session_state.pending_question = """Find the most recent test run and generate a detailed technical report for Dev/QA teams.
 
-Include:
-- Classifier prediction with feature importance
-- Transaction-level performance breakdown
-- Top 5 slowest transactions with baselines
-- Error patterns and affected endpoints
-- Actionable debugging steps
+Step 1: Use query_tests to get the latest test
+Step 2: Use get_baseline_comparison to get transaction-level data with baselines
+
+MUST include Transaction-level Performance Breakdown table with ACTUAL DATA:
+| Transaction Name | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% |
+
+Show ALL transactions, not placeholders or "...". Use the data from get_baseline_comparison.
+
+Also include:
+- Classifier prediction with top 3 most important features
+- Top 5 slowest transactions
+- Error patterns (if any)
+- Actionable debugging steps for degraded transactions
 
 Format: Technical detail for engineers."""
             st.rerun()
@@ -333,13 +352,32 @@ Format: Technical detail for engineers."""
         if st.button("📊 Stakeholder Summary"):
             st.session_state.pending_question = """Find the most recent test run and generate a stakeholder summary.
 
-Include:
-- Test result (PASS/FAIL)
-- Key performance metrics vs targets
-- Any blockers or concerns
-- Timeline impact
+Step 1: Use query_tests to get the latest test
+Step 2: Use get_test_detail to get test info
+Step 3: Use get_baseline_comparison to get performance vs baseline
 
-Format: Brief, business-focused."""
+MUST include:
+1. Test Summary:
+   - Test ID and timestamp
+   - Classifier Prediction: PASS/FAIL (XX.X% confidence)
+   - Overall Result
+
+2. Key Metrics Summary:
+   - Transactions tested
+   - Average P95 vs baseline
+   - Error rate
+   - Critical deviations count
+
+3. Transaction Highlights (top 5 worst performing):
+   Use ACTUAL DATA from get_baseline_comparison in table format:
+   | Transaction | Actual P95 | Baseline P95 | Δ% | Status |
+
+4. **Release Recommendation** (in bold):
+   - GO if PASS and no critical issues
+   - NO-GO if FAIL or critical degradations
+   - WITH CAUTION if borderline
+
+Format: Brief, business-focused, use actual numbers."""
             st.rerun()
 
 # ============================================================================
@@ -555,12 +593,27 @@ elif page == "🔍 Deep Dive":
 
 Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
 
+Step 1: Use get_test_detail to get full test information including throughput
+Step 2: Use get_baseline_comparison to compare all transactions with baseline
+
 Create a professional report with:
+
 1. Executive Summary (2-3 sentences)
-2. Test Result: PASS/FAIL with confidence level
-3. Performance Summary: Compare key metrics vs baseline
-4. Risk Assessment: Any concerns or degradations
-5. Release Recommendation: GO/NO-GO with justification
+
+2. Test Overview Table:
+   Include: Test Name, P95, Error%, Transactions, Throughput, Result, End Time, Classifier Confidence
+
+3. Performance vs Baseline:
+   - Overall deviation summary
+   - Critical transactions (>50% degradation)
+   - Use actual data from get_baseline_comparison
+
+4. Risk Assessment:
+   List any concerns with impact level (High/Medium/Low)
+
+5. **Release Recommendation** (bold):
+   - **GO** / **NO-GO** / **GO WITH CAUTION**
+   - Justification in 2-3 sentences
 
 Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
                             
@@ -582,14 +635,31 @@ Format: Professional, concise, non-technical language suitable for stakeholder p
 
 Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
 
-Create a technical report with:
-1. Classifier Analysis: Prediction with key feature values
-2. Performance Breakdown: Transaction-level analysis with baselines
-3. Technical Details: Slowest endpoints, error patterns
-4. Action Items: Specific debugging steps or code areas to review
-5. Test Coverage: Transactions tested, any gaps
+Step 1: Use get_test_detail to get test details
+Step 2: Use get_baseline_comparison to get ALL transaction-level data
 
-Format: Technical depth suitable for engineers."""
+Create a technical report with:
+
+1. Classifier Analysis:
+   - Prediction with confidence
+   - Top 5 most important features with values
+
+2. Transaction-level Performance Breakdown:
+   MUST show ACTUAL DATA from get_baseline_comparison (not placeholders):
+   Create full table with ALL transactions showing:
+   | Transaction | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% | Status |
+   
+3. Critical Issues:
+   - Transactions with >50% P95 degradation
+   - Transactions with errors
+   - Root cause analysis
+
+4. Action Items:
+   - Specific debugging steps
+   - Code areas to investigate
+   - Optimization recommendations
+
+Format: Technical depth suitable for engineers. Use actual numbers and data."""
                             
                             report, tokens = ask_about_test(selected_test, report_question)
                             st.markdown("#### 🔬 Engineering Report")
@@ -609,13 +679,32 @@ Format: Technical depth suitable for engineers."""
 
 Classifier Prediction: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
 
+Step 1: Use get_test_detail for test information
+Step 2: Use get_baseline_comparison for quality metrics vs baseline
+
 Create a QA report with:
-1. Test Summary: What was tested, scope, duration
-2. Quality Metrics: P95, error rates, throughput vs baseline
-3. Pass/Fail Analysis: Why classifier marked as PASS
-4. Edge Cases: Any boundary conditions or anomalies
-5. Retest Recommendations: Areas that need additional validation
-6. Sign-Off Status: Ready for release or needs follow-up
+
+1. Test Summary:
+   - Test ID and scope
+   - Duration and load level
+   - Classifier: {pred_result['prediction']} ({pred_result['confidence']:.1f}% confidence)
+
+2. Quality Metrics vs Baseline:
+   MUST include actual transaction data table:
+   | Transaction | P95 | Baseline P95 | Δ% | Errors | Pass/Fail |
+   
+3. Pass/Fail Analysis:
+   - Why classifier marked as {pred_result['prediction']}
+   - Transactions meeting quality bar
+   - Transactions below quality bar
+
+4. Edge Cases & Anomalies:
+   - Boundary conditions tested
+   - Unexpected behaviors
+
+5. **Sign-Off Status** (bold):
+   - Ready for release / Needs retest / Blocked
+   - Specific follow-up actions if needed
 
 Format: QA perspective, focus on test quality and coverage."""
                             
