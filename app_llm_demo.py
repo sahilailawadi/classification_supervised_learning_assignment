@@ -295,7 +295,59 @@ if page == "💬 Chat Analysis":
     
     with col4:
         if st.button("🔍 Summarize last test"):
-            st.session_state.pending_question = "Analyze the most recent test run. Show classifier prediction, key metrics, and whether it's ready for release."
+            # Pre-fetch actual data to prevent hallucination
+            analyzer = st.session_state.analyzer
+            tests = analyzer.data_source.list_tests(limit=1)
+            if tests:
+                latest_test = tests[0]
+                
+                # Get prediction
+                pred_result = analyzer.predict_test(latest_test)
+                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+                
+                # Get test details
+                test_df = analyzer.data_source.get_test_by_id(latest_test)
+                test_summary = test_df.groupby('testplan').agg({
+                    'perc_95': 'mean',
+                    'error_percentage': 'mean',
+                    'transaction_name': 'count',
+                    'end_time': 'first',
+                    'exit_code': 'first'
+                }).iloc[0]
+                
+                # Get baseline comparison
+                from mcp_server.tools.baseline import get_baseline_comparison
+                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+                
+                if 'error' not in baseline_result:
+                    baseline_summary = baseline_result['summary']
+                else:
+                    baseline_summary = {}
+                
+                summary_question = f"""Analyze the most recent test run: {latest_test}
+
+ACTUAL TEST DATA:
+- Test ID: {latest_test}
+- End Time: {test_summary['end_time']}
+- Exit Code: {'PASS' if test_summary['exit_code'] == 1 else 'FAIL'}
+- Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
+- Total Transactions: {int(test_summary['transaction_name'])}
+- Average P95: {test_summary['perc_95']:.0f}ms
+- Error Rate: {test_summary['error_percentage']:.2f}%
+- Avg P95 Deviation from Baseline: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
+- Critical Deviations (>50%): {baseline_summary.get('critical_deviations_count', 0)} transactions
+
+Provide a concise summary with:
+1. **Overall Assessment**: PASS/FAIL with confidence
+2. **Key Metrics**: P95, error rate, baseline comparison
+3. **Key Issues**: Critical deviations (if any)
+4. **Release Readiness**: GO/NO-GO and why
+
+Keep it brief - 4-5 sentences max."""
+                
+                st.session_state.pending_question = summary_question
+            else:
+                st.session_state.pending_question = "No tests found in database."
             st.rerun()
     
     # Report generation
