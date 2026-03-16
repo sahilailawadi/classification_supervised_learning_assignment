@@ -54,11 +54,36 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
     if len(df_test) == 0:
         return {'error': f'Test {testplan} not found'}
     
+    # Derive test_type from build_version (same logic as features.py)
+    def derive_test_type(build_version):
+        if pd.isna(build_version) or build_version == '':
+            return 'unknown'
+        bv_lower = str(build_version).lower()
+        if 'load' in bv_lower:
+            return 'load_test'
+        elif 'stress' in bv_lower:
+            return 'stress_test'
+        elif 'soak' in bv_lower:
+            return 'soak_test'
+        else:
+            return 'load_test'  # default
+    
+    df_test['test_type'] = df_test['build_version'].apply(derive_test_type)
+    
     # Extract test metadata
     test_info = df_test.iloc[0]
-    test_type = test_info.get('test_type', 'unknown')
+    test_type = test_info['test_type']
     num_clients = test_info.get('num_clients', 0)
     exit_code = test_info['exit_code']
+    
+    # Ensure data types match for merge
+    df_test["test_type"] = df_test["test_type"].astype(str)
+    df_test["transaction_name"] = df_test["transaction_name"].astype(str)
+    df_test["num_clients"] = pd.to_numeric(df_test["num_clients"], errors='coerce')
+    
+    baselines["test_type"] = baselines["test_type"].astype(str)
+    baselines["transaction_name"] = baselines["transaction_name"].astype(str)
+    baselines["num_clients"] = pd.to_numeric(baselines["num_clients"], errors='coerce')
     
     # Merge with baselines
     df_merged = df_test.copy()
