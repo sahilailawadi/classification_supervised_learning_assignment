@@ -617,10 +617,17 @@ elif page == "🔍 Deep Dive":
                     st.session_state.pending_deepdive_question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
                     st.rerun()
             
+            # Handle pending question from quick actions (before input widget)
+            pending_question = None
+            if 'pending_deepdive_question' in st.session_state and st.session_state.pending_deepdive_question:
+                pending_question = st.session_state.pending_deepdive_question
+                st.session_state.pending_deepdive_question = None
+            
             # Chat input
             st.markdown("**Or ask a custom question:**")
             test_question = st.text_input(
                 "Ask anything about this test...",
+                value=pending_question or "",
                 placeholder="e.g., 'What are the top 3 performance risks?', 'Is /negotiate endpoint acceptable?'",
                 key="test_question_input"
             )
@@ -634,10 +641,8 @@ elif page == "🔍 Deep Dive":
                         st.session_state.test_chat_history[selected_test] = []
                     st.rerun()
             
-            # Handle pending question from quick actions
-            if 'pending_deepdive_question' in st.session_state and st.session_state.pending_deepdive_question:
-                test_question = st.session_state.pending_deepdive_question
-                st.session_state.pending_deepdive_question = None
+            # Auto-trigger ask button if we have a pending question
+            if pending_question:
                 ask_button = True
             
             # Process question
