@@ -215,14 +215,14 @@ with st.sidebar:
 # Main content (already checked initialization above)
 
 st.markdown('<p class="main-header">🤖 LLM-Augmented Test Analysis</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Ask questions in natural language • MCP Phase 2: Auto data fetching with tool routing</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Ask questions in natural language • MCP Enabled: Auto data fetching with tool routing</p>', unsafe_allow_html=True)
 
 # ============================================================================
 # PAGE: Chat Analysis
 # ============================================================================
 if page == "💬 Chat Analysis":
     st.markdown("### 💬 Ask Questions About Your Tests")
-    st.markdown("**MCP Phase 2 Enabled:** Ask naturally and tools fetch data automatically!")
+    st.markdown("**MCP Enabled:** Ask naturally and tools fetch data automatically!")
     st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
     
     # Chat history
@@ -340,7 +340,7 @@ elif page == "📈 Test Overview":
     
     # Performance over time
     st.markdown("#### Performance Trends")
-    df['date'] = pd.to_datetime(df['end_time']).dt.date
+    df['date'] = pd.to_datetime(df['end_time'], utc=True).dt.date
     daily_stats = df.groupby('date').agg({
         'perc_95': 'mean',
         'error_percentage': 'mean',
@@ -458,11 +458,11 @@ elif page == "🔍 Deep Dive":
 elif page == "⚖️ Compare Tests":
     analyzer = st.session_state.analyzer
     
-    st.markdown("### ⚖️ Compare Two Tests")
+    st.markdown("### ⚖️ Compare Tests: Test 1 vs Test 2 vs Baseline")
     
     tests = analyzer.data_source.list_tests(limit=50)
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([3, 3, 1])
     
     with col1:
         test1 = st.selectbox("Test 1:", tests, index=0, key="test1")
@@ -470,34 +470,71 @@ elif page == "⚖️ Compare Tests":
     with col2:
         test2 = st.selectbox("Test 2:", tests, index=1 if len(tests) > 1 else 0, key="test2")
     
-    if st.button("⚖️ Compare", type="primary"):
+    with col3:
+        include_baseline = st.checkbox("Include Baseline", value=True)
+    
+    if st.button("⚖️ Compare All", type="primary"):
         if test1 == test2:
             st.warning("⚠️ Please select two different tests")
         else:
-            with st.spinner("🤖 Comparing tests..."):
-                comparison = analyzer.compare_tests(test1, test2)
-                
+            with st.spinner("🤖 Performing three-way comparison..."):
                 st.markdown("---")
-                st.markdown("### 🤖 Comparison Analysis")
+                
+                # Section 1: Test 1 vs Test 2
+                st.markdown("### 🔄 Test 1 vs Test 2")
+                comparison = analyzer.compare_tests(test1, test2)
                 st.markdown(comparison)
                 
-                # Side-by-side predictions
+                if include_baseline:
+                    # Section 2: Test 1 vs Baseline
+                    st.markdown("---")
+                    st.markdown(f"### 📈 Test 1 ({test1}) vs Baseline")
+                    result1 = analyzer.ask(
+                        f"Compare {test1} with baseline. Focus on key deviations and classifier features.",
+                        conversation_history=st.session_state.conversation_history
+                    )
+                    st.markdown(result1['answer'])
+                    
+                    # Section 3: Test 2 vs Baseline
+                    st.markdown("---")
+                    st.markdown(f"### 📈 Test 2 ({test2}) vs Baseline")
+                    result2 = analyzer.ask(
+                        f"Compare {test2} with baseline. Focus on key deviations and classifier features.",
+                        conversation_history=st.session_state.conversation_history
+                    )
+                    st.markdown(result2['answer'])
+                
+                # Section 4: Three-way Prediction Comparison
                 st.markdown("---")
                 st.markdown("### 📊 Predictions")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown(f"**{test1}**")
+                    st.markdown(f"**Test 1: {test1}**")
                     pred1 = analyzer.predict_test(test1)
-                    st.metric("Prediction", pred1['prediction'])
-                    st.metric("Confidence", f"{pred1['confidence']:.1f}%")
+                    subcol1, subcol2, subcol3 = st.columns(3)
+                    with subcol1:
+                        st.metric("Prediction", pred1['prediction'])
+                    with subcol2:
+                        st.metric("Confidence", f"{pred1['confidence']:.1f}%")
+                    with subcol3:
+                        actual1 = pred1.get('actual_result', 'N/A')
+                        match1 = "✅" if pred1['prediction'] == actual1 else "❌"
+                        st.metric("Actual", f"{actual1} {match1}")
                 
                 with col2:
-                    st.markdown(f"**{test2}**")
+                    st.markdown(f"**Test 2: {test2}**")
                     pred2 = analyzer.predict_test(test2)
-                    st.metric("Prediction", pred2['prediction'])
-                    st.metric("Confidence", f"{pred2['confidence']:.1f}%")
+                    subcol1, subcol2, subcol3 = st.columns(3)
+                    with subcol1:
+                        st.metric("Prediction", pred2['prediction'])
+                    with subcol2:
+                        st.metric("Confidence", f"{pred2['confidence']:.1f}%")
+                    with subcol3:
+                        actual2 = pred2.get('actual_result', 'N/A')
+                        match2 = "✅" if pred2['prediction'] == actual2 else "❌"
+                        st.metric("Actual", f"{actual2} {match2}")
 
 # Footer
 st.markdown("---")
