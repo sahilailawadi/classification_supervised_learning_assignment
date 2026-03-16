@@ -53,3 +53,4 @@ scripts/simplify_notebook_helpers.py
 # Project notes and instructions (local only)
 copilot-instructions.md
 notes.md
+AGENTS.md

@@ -54,6 +54,8 @@ if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'current_test' not in st.session_state:
     st.session_state.current_test = None
+if 'pending_question' not in st.session_state:
+    st.session_state.pending_question = None
 
 def initialize_system():
     """Initialize TestAnalyzer and load data"""
@@ -212,6 +214,25 @@ if page == "💬 Chat Analysis":
             with st.chat_message("assistant"):
                 st.markdown(answer)
     
+    # Handle pending question from quick buttons
+    if st.session_state.pending_question:
+        question = st.session_state.pending_question
+        st.session_state.pending_question = None
+        
+        # Add user message
+        with st.chat_message("user"):
+            st.write(question)
+        
+        # Get LLM response
+        with st.chat_message("assistant"):
+            with st.spinner("🤔 Thinking..."):
+                answer, tokens = ask_llm_question(question)
+                st.markdown(answer)
+                st.caption(f"💭 *Tokens used: {tokens}*")
+        
+        # Save to history
+        st.session_state.conversation_history.append((question, answer))
+    
     # Question input
     question = st.chat_input("Ask a question about your test data...")
     
@@ -238,26 +259,17 @@ if page == "💬 Chat Analysis":
     
     with col1:
         if st.button("📋 Last 5 tests?"):
-            st.session_state.conversation_history.append((
-                "What are the last 5 test runs?",
-                "⏳ Processing..."
-            ))
+            st.session_state.pending_question = "What are the last 5 test runs?"
             st.rerun()
     
     with col2:
         if st.button("❌ Failed tests?"):
-            st.session_state.conversation_history.append((
-                "Show me all failed tests",
-                "⏳ Processing..."
-            ))
+            st.session_state.pending_question = "Show me all failed tests"
             st.rerun()
     
     with col3:
         if st.button("📊 Pass rate?"):
-            st.session_state.conversation_history.append((
-                "What is the overall pass rate?",
-                "⏳ Processing..."
-            ))
+            st.session_state.pending_question = "What is the overall pass rate?"
             st.rerun()
 
 # ============================================================================

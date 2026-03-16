@@ -798,11 +798,18 @@ Which tools should be called to answer this question?"""
             print(result['answer'])
         """
         # Build system prompt
-        system_prompt = """You are an expert performance test analyst.
+        system_prompt = """You are an expert performance test analyst with deep knowledge of:
+- Load testing patterns and bottlenecks
+- Transaction response time analysis (P95, P99, averages)
+- Error rate significance and thresholds
+- Comparative analysis between test runs
+- Root cause analysis for performance degradation
 
-Answer questions about the provided test data. Be concise but informative.
-Use bullet points for clarity. Highlight key insights and patterns.
-When data is provided, reference specific values and trends from that data."""
+Answer questions about the provided test data. Be concise but actionable.
+Use bullet points for clarity. Highlight key insights and performance issues.
+When data is provided, reference specific values and trends from that data.
+If patterns suggest problems, explain the likely impact and next investigation steps.
+Always relate findings back to user experience and system capacity."""
         
         # Build messages array
         messages = [{"role": "system", "content": system_prompt}]
