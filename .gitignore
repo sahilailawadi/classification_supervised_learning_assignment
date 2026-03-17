@@ -11,6 +11,7 @@ venv/
 
 # Large training data exports (keep these ignored)
 data_exports/
+!data_exports/academic_demo_data.xlsx
 *.csv
 
 # IDE
@@ -25,9 +26,6 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
-
-# Data exports (if any local CSV dumps from DB)
-data_exports/
 
 # Local files (anonymization mappings, credentials)
 local/
