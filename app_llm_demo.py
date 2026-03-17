@@ -74,7 +74,7 @@ def initialize_system():
 
 def ask_llm_question(question: str, context: str = ""):
     """
-    Send question to LLM with MCP Phase 2 tool integration.
+    Send question to LLM with MCP tool integration.
     
     NOW USES: analyzer.ask() which automatically calls MCP tools as needed!
     - "What are the last 5 tests?" → auto-calls query_tests
@@ -191,7 +191,7 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    st.markdown("### 📊 Quick Stats")
+    st.markdown("### 📊 Quick Classification Model Stats")
     
     # Use cached data (already initialized above)
     df = st.session_state.df
@@ -217,14 +217,14 @@ with st.sidebar:
 # Main content (already checked initialization above)
 
 st.markdown('<p class="main-header">🤖 LLM-Augmented Test Analysis</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Ask questions in natural language • MCP Enabled: Auto data fetching with tool routing</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Ask questions in natural language • MCP Enabled</p>', unsafe_allow_html=True)
 
 # ============================================================================
 # PAGE: Chat Analysis
 # ============================================================================
 if page == "💬 Chat Analysis":
     st.markdown("### 💬 Ask Questions About Your Tests")
-    st.markdown("**MCP Enabled:** Ask naturally and tools fetch data automatically!")
+    st.markdown("**MCP Enabled:**")
     st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
     
     # Chat history
@@ -274,7 +274,7 @@ if page == "💬 Chat Analysis":
     
     # Quick questions
     st.markdown("---")
-    st.markdown("**💡 Quick Questions (with MCP auto-tool routing):**")
+    st.markdown("**💡 Quick Questions :**")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -631,14 +631,14 @@ elif page == "📈 Test Overview":
         })
         fig = px.pie(result_df, values='Count', names='Result', 
                      color='Result', color_discrete_map={'PASS': '#28a745', 'FAIL': '#dc3545'})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         st.markdown("#### Top 10 Slowest Transactions")
         top_slow = df.groupby('transaction_name')['perc_95'].mean().sort_values(ascending=False).head(10)
         fig = px.bar(x=top_slow.values, y=top_slow.index, orientation='h',
                      labels={'x': 'P95 Response Time (ms)', 'y': 'Transaction'})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     # Performance over time
     st.markdown("#### Performance Trends")
@@ -653,7 +653,7 @@ elif page == "📈 Test Overview":
     fig.add_trace(go.Scatter(x=daily_stats['date'], y=daily_stats['perc_95'],
                              mode='lines+markers', name='Avg P95'))
     fig.update_layout(xaxis_title='Date', yaxis_title='P95 (ms)', hovermode='x')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     
     # Transaction table
     st.markdown("#### Transaction Summary")
@@ -665,7 +665,7 @@ elif page == "📈 Test Overview":
     }).round(2)
     trans_summary.columns = ['Avg P95', 'Avg Error%', 'Avg Response', 'Count']
     trans_summary = trans_summary.sort_values('Avg P95', ascending=False)
-    st.dataframe(trans_summary, use_container_width=True)
+    st.dataframe(trans_summary, width='stretch')
     
     # Ask about the data
     st.markdown("---")
@@ -709,7 +709,7 @@ elif page == "🔍 Deep Dive":
     with col2:
         st.write("")  # Add spacing to align button with selectbox
         st.write("")  # 
-        analyze_button = st.button("🔍 Analyze", type="primary", use_container_width=True)
+        analyze_button = st.button("🔍 Analyze", type="primary", width='stretch')
     
     # Only analyze on button click (removed automatic analysis on selection change)
     if analyze_button:
@@ -796,7 +796,7 @@ elif page == "🔍 Deep Dive":
             # Show features
             with st.expander("📊 Feature Values"):
                 features_df = pd.DataFrame([pred_result['features']])
-                st.dataframe(features_df.T, use_container_width=True)
+                st.dataframe(features_df.T, width='stretch')
             
             # Show transaction data
             test_data = df[df['testplan'] == selected_test].sort_values('perc_95', ascending=False)
@@ -811,7 +811,7 @@ elif page == "🔍 Deep Dive":
                     if col in test_data.columns:
                         display_cols.append(col)
                 
-                st.dataframe(test_data[display_cols], use_container_width=True)
+                st.dataframe(test_data[display_cols], width='stretch')
             
             # HYBRID APPROACH: Quick Actions + Chat
             st.markdown("---")
@@ -823,7 +823,11 @@ elif page == "🔍 Deep Dive":
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                if st.button("📝 PO Report", key="quick_po", use_container_width=True):
+                if st.button("📝 PO Report", key="quick_po", width='stretch'):
+                    # Show immediate feedback
+                    loading_placeholder = st.empty()
+                    loading_placeholder.info("⏳ Generating PO report... check below for response")
+                    
                     conf_pct = confidence if confidence >= 2 else confidence * 100
                     question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
                     
@@ -834,10 +838,15 @@ elif page == "🔍 Deep Dive":
                         if selected_test not in st.session_state.test_chat_history:
                             st.session_state.test_chat_history[selected_test] = []
                         st.session_state.test_chat_history[selected_test].append((question, answer))
+                    
+                    loading_placeholder.empty()
                     st.rerun()
             
             with col2:
-                if st.button("🔬 Eng Report", key="quick_eng", use_container_width=True):
+                if st.button("🔬 Eng Report", key="quick_eng", width='stretch'):
+                    loading_placeholder = st.empty()
+                    loading_placeholder.info("⏳ Generating engineering report... check below for response")
+                    
                     conf_pct = confidence if confidence >= 2 else confidence * 100
                     question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {conf_pct:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
                     
@@ -847,10 +856,15 @@ elif page == "🔍 Deep Dive":
                         if selected_test not in st.session_state.test_chat_history:
                             st.session_state.test_chat_history[selected_test] = []
                         st.session_state.test_chat_history[selected_test].append((question, answer))
+                    
+                    loading_placeholder.empty()
                     st.rerun()
             
             with col3:
-                if st.button("📊 QA Report", key="quick_qa", use_container_width=True):
+                if st.button("📊 QA Report", key="quick_qa", width='stretch'):
+                    loading_placeholder = st.empty()
+                    loading_placeholder.info("⏳ Generating QA report... check below for response")
+                    
                     conf_pct = confidence if confidence >= 2 else confidence * 100
                     question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
                     
@@ -860,10 +874,15 @@ elif page == "🔍 Deep Dive":
                         if selected_test not in st.session_state.test_chat_history:
                             st.session_state.test_chat_history[selected_test] = []
                         st.session_state.test_chat_history[selected_test].append((question, answer))
+                    
+                    loading_placeholder.empty()
                     st.rerun()
             
             with col4:
-                if st.button("❓ Explain Prediction", key="quick_explain", use_container_width=True):
+                if st.button("❓ Explain Prediction", key="quick_explain", width='stretch'):
+                    loading_placeholder = st.empty()
+                    loading_placeholder.info("⏳ Analyzing prediction... check below for response")
+                    
                     conf_pct = confidence if confidence >= 2 else confidence * 100
                     question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
                     
@@ -873,6 +892,8 @@ elif page == "🔍 Deep Dive":
                         if selected_test not in st.session_state.test_chat_history:
                             st.session_state.test_chat_history[selected_test] = []
                         st.session_state.test_chat_history[selected_test].append((question, answer))
+                    
+                    loading_placeholder.empty()
                     st.rerun()
             
             # Chat input using form to handle submission properly
@@ -885,7 +906,7 @@ elif page == "🔍 Deep Dive":
                     label_visibility="collapsed"
                 )
                 
-                submitted = st.form_submit_button("💬 Ask", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("💬 Ask", type="primary", width='stretch')
             
             # Clear chat button (outside form)
             if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
@@ -895,6 +916,10 @@ elif page == "🔍 Deep Dive":
             
             # Process question from form submission
             if submitted and test_question:
+                # Show loading indicator right here where user is looking
+                loading_status = st.empty()
+                loading_status.info("⏳ Processing your question... response will appear below")
+                
                 with st.spinner("🤖 Analyzing..."):
                     # Use ask_about_test for test-specific context
                     answer, tokens = ask_about_test(selected_test, test_question)
@@ -903,7 +928,8 @@ elif page == "🔍 Deep Dive":
                     if selected_test not in st.session_state.test_chat_history:
                         st.session_state.test_chat_history[selected_test] = []
                     st.session_state.test_chat_history[selected_test].append((test_question, answer))
-                    
+                
+                loading_status.empty()
                 # Note: Form clears input automatically via clear_on_submit=True
             
             # Display chat history for this test
