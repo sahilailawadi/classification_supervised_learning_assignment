@@ -226,21 +226,34 @@ st.markdown('<p class="sub-header">Ask questions in natural language • MCP Ena
 # ============================================================================
 if page == "💬 Chat Analysis":
     
-    # Process report generation FIRST (before any UI rendering)
-    # This fetches data, builds the question, and reruns cleanly
+    # === Render header and chat history first (non-blocking) ===
+    st.markdown("### 💬 Ask Questions About Your Tests")
+    st.markdown("**MCP Enabled:**")
+    st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
+    
+    # Chat history
+    for i, (q, a) in enumerate(st.session_state.conversation_history):
+        with st.chat_message("user"):
+            st.write(q)
+        with st.chat_message("assistant"):
+            st.markdown(a)
+    
+    # === Process report generation (spinners appear after chat history, above input) ===
     if st.session_state.generate_report_type:
         report_type = st.session_state.generate_report_type
         st.session_state.generate_report_type = None
         
-        analyzer = st.session_state.analyzer
-        tests = analyzer.data_source.list_tests(limit=1)
+        with st.spinner("⏳ Fetching test data and preparing report..."):
+            analyzer = st.session_state.analyzer
+            tests = analyzer.data_source.list_tests(limit=1)
         
         if tests:
             latest_test = tests[0]
-            from mcp_server.tools.baseline import get_baseline_comparison
-            baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
-            pred_result = analyzer.predict_test(latest_test)
-            conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+            with st.spinner(f"📊 Analyzing test {latest_test} — fetching baseline comparison..."):
+                from mcp_server.tools.baseline import get_baseline_comparison
+                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+                pred_result = analyzer.predict_test(latest_test)
+                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
             
             if report_type == 'summary':
                 test_df = analyzer.data_source.get_test_by_id(latest_test)
@@ -451,43 +464,32 @@ Format: Brief, business-focused. Use ACTUAL transaction names from the data abov
         
         st.rerun()
     
-    # Process pending question BEFORE rendering any UI (prevents duplication)
-    # This processes the LLM call, saves to history, then reruns for clean render
+    # === Process pending question (spinner appears after chat history, above input) ===
     if st.session_state.pending_question:
         question = st.session_state.pending_question
         st.session_state.pending_question = None
         
-        with st.spinner("🤖 Processing your question..."):
-            analyzer = st.session_state.analyzer
-            conversation_history = st.session_state.conversation_history
-            try:
-                result = analyzer.ask(
-                    question,
-                    conversation_history=conversation_history
-                )
-                tools_used = result.get('tools_used', [])
-                tools_info = f"\n\n*🔧 Tools: {', '.join(tools_used)}*" if tools_used else ""
-                answer = result['answer'] + tools_info
-            except Exception as e:
-                answer = f"❌ Error: {e}"
+        with st.chat_message("user"):
+            st.write(question)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("🤖 Sending to LLM — generating response..."):
+                analyzer = st.session_state.analyzer
+                conversation_history = st.session_state.conversation_history
+                try:
+                    result = analyzer.ask(
+                        question,
+                        conversation_history=conversation_history
+                    )
+                    tools_used = result.get('tools_used', [])
+                    tools_info = f"\n\n*🔧 Tools: {', '.join(tools_used)}*" if tools_used else ""
+                    answer = result['answer'] + tools_info
+                except Exception as e:
+                    answer = f"❌ Error: {e}"
+            
+            st.markdown(answer)
         
         st.session_state.conversation_history.append((question, answer))
-        st.rerun()
-    
-    # === Now render all UI (no blocking calls above this point) ===
-    st.markdown("### 💬 Ask Questions About Your Tests")
-    st.markdown("**MCP Enabled:**")
-    st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
-    
-    # Chat history
-    chat_container = st.container()
-    
-    with chat_container:
-        for i, (question, answer) in enumerate(st.session_state.conversation_history):
-            with st.chat_message("user"):
-                st.write(question)
-            with st.chat_message("assistant"):
-                st.markdown(answer)
     
     # Question input
     question = st.chat_input("Ask a question about your test data...")
