@@ -58,6 +58,8 @@ if 'pending_question' not in st.session_state:
     st.session_state.pending_question = None
 if 'test_chat_history' not in st.session_state:
     st.session_state.test_chat_history = {}  # {test_id: [(question, answer), ...]}
+if 'generate_report_type' not in st.session_state:
+    st.session_state.generate_report_type = None
 
 def initialize_system():
     """Initialize TestAnalyzer and load data"""
@@ -223,89 +225,24 @@ st.markdown('<p class="sub-header">Ask questions in natural language • MCP Ena
 # PAGE: Chat Analysis
 # ============================================================================
 if page == "💬 Chat Analysis":
-    st.markdown("### 💬 Ask Questions About Your Tests")
-    st.markdown("**MCP Enabled:**")
-    st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
     
-    # Chat history
-    chat_container = st.container()
-    
-    with chat_container:
-        for i, (question, answer) in enumerate(st.session_state.conversation_history):
-            with st.chat_message("user"):
-                st.write(question)
-            with st.chat_message("assistant"):
-                st.markdown(answer)
-    
-    # Handle pending question from quick buttons
-    if st.session_state.pending_question:
-        question = st.session_state.pending_question
-        st.session_state.pending_question = None
+    # Process report generation FIRST (before any UI rendering)
+    # This fetches data, builds the question, and reruns cleanly
+    if st.session_state.generate_report_type:
+        report_type = st.session_state.generate_report_type
+        st.session_state.generate_report_type = None
         
-        # Add user message
-        with st.chat_message("user"):
-            st.write(question)
+        analyzer = st.session_state.analyzer
+        tests = analyzer.data_source.list_tests(limit=1)
         
-        # Get LLM response with detailed status
-        with st.chat_message("assistant"):
-            answer, tokens = ask_llm_question(question)
-            st.markdown(answer)
-            st.caption(f"💭 *Tokens used: {tokens}*")
-        
-        # Save to history
-        st.session_state.conversation_history.append((question, answer))
-    
-    # Question input
-    question = st.chat_input("Ask a question about your test data...")
-    
-    if question:
-        # Add user message
-        with st.chat_message("user"):
-            st.write(question)
-        
-        # Get LLM response with detailed status
-        with st.chat_message("assistant"):
-            answer, tokens = ask_llm_question(question)
-            st.markdown(answer)
-            st.caption(f"💭 *Tokens used: {tokens}*")
-        
-        # Save to history
-        st.session_state.conversation_history.append((question, answer))
-    
-    # Quick questions
-    st.markdown("---")
-    st.markdown("**💡 Quick Questions :**")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("📋 Last 5 tests?"):
-            st.session_state.pending_question = "What are the last 5 test runs?"
-            st.rerun()
-    
-    with col2:
-        if st.button("❌ Failed tests?"):
-            st.session_state.pending_question = "Show me all failed tests"
-            st.rerun()
-    
-    with col3:
-        if st.button("📊 Pass rate?"):
-            st.session_state.pending_question = "What is the overall pass rate?"
-            st.rerun()
-    
-    with col4:
-        if st.button("🔍 Summarize last test"):
-            # Pre-fetch actual data to prevent hallucination
-            analyzer = st.session_state.analyzer
-            tests = analyzer.data_source.list_tests(limit=1)
-            if tests:
-                latest_test = tests[0]
-                
-                # Get prediction
-                pred_result = analyzer.predict_test(latest_test)
-                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
-                
-                # Get test details
+        if tests:
+            latest_test = tests[0]
+            from mcp_server.tools.baseline import get_baseline_comparison
+            baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
+            pred_result = analyzer.predict_test(latest_test)
+            conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+            
+            if report_type == 'summary':
                 test_df = analyzer.data_source.get_test_by_id(latest_test)
                 test_summary = test_df.groupby('testplan').agg({
                     'perc_95': 'mean',
@@ -315,16 +252,12 @@ if page == "💬 Chat Analysis":
                     'exit_code': 'first'
                 }).iloc[0]
                 
-                # Get baseline comparison
-                from mcp_server.tools.baseline import get_baseline_comparison
-                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
-                
                 if 'error' not in baseline_result:
                     baseline_summary = baseline_result['summary']
                 else:
                     baseline_summary = {}
                 
-                summary_question = f"""Analyze the most recent test run: {latest_test}
+                st.session_state.pending_question = f"""Analyze the most recent test run: {latest_test}
 
 ACTUAL TEST DATA:
 - Test ID: {latest_test}
@@ -344,34 +277,8 @@ Provide a concise summary with:
 4. **Release Readiness**: GO/NO-GO and why
 
 Keep it brief - 4-5 sentences max."""
-                
-                st.session_state.pending_question = summary_question
-            else:
-                st.session_state.pending_question = "No tests found in database."
-            st.rerun()
-    
-    # Report generation
-    st.markdown("---")
-    st.markdown("**📄 Generate Reports (Last Test):**")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📝 PO Sign-Off Report"):
-            # Pre-fetch actual data to prevent hallucination
-            analyzer = st.session_state.analyzer
-            tests = analyzer.data_source.list_tests(limit=1)
-            if tests:
-                latest_test = tests[0]
-                
-                # Get baseline comparison with ACTUAL data
-                from mcp_server.tools.baseline import get_baseline_comparison
-                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
-                
-                # Get prediction
-                pred_result = analyzer.predict_test(latest_test)
-                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
-                
-                # Get test details
+            
+            elif report_type == 'po_report':
                 test_df = analyzer.data_source.get_test_by_id(latest_test)
                 test_summary = test_df.groupby('testplan').agg({
                     'perc_95': 'mean',
@@ -383,8 +290,6 @@ Keep it brief - 4-5 sentences max."""
                 
                 if 'error' not in baseline_result:
                     baseline_summary = baseline_result['summary']
-                    
-                    # Format critical issues
                     critical_txns = [t for t in baseline_result['transactions'] 
                                    if t['has_baseline'] and t['deviation']['p95_pct'] > 50]
                     critical_list = "\\n".join([f"- {t['name']}: {t['actual']['p95']:.0f}ms vs {t['baseline']['p95']:.0f}ms baseline ({t['deviation']['p95_pct']:+.1f}%)" 
@@ -393,7 +298,7 @@ Keep it brief - 4-5 sentences max."""
                     baseline_summary = {}
                     critical_list = "No baseline data available"
                 
-                report_question = f"""Generate a release sign-off report for test {latest_test} for Product Owner review.
+                st.session_state.pending_question = f"""Generate a release sign-off report for test {latest_test} for Product Owner review.
 
 ACTUAL TEST DATA (DO NOT MODIFY):
 
@@ -432,29 +337,8 @@ Create a professional report with:
    - Justification in 2-3 sentences
 
 Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
-                
-                st.session_state.pending_question = report_question
-            else:
-                st.session_state.pending_question = "No tests found in database."
-            st.rerun()
-    
-    with col2:
-        if st.button("🔬 Dev/QA Report"):
-            # Pre-fetch actual data to prevent hallucination
-            analyzer = st.session_state.analyzer
-            tests = analyzer.data_source.list_tests(limit=1)
-            if tests:
-                latest_test = tests[0]
-                
-                # Get baseline comparison with ACTUAL data
-                from mcp_server.tools.baseline import get_baseline_comparison
-                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
-                
-                # Get prediction
-                pred_result = analyzer.predict_test(latest_test)
-                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
-                
-                # Format transaction data into table
+            
+            elif report_type == 'dev_report':
                 if 'error' not in baseline_result:
                     txn_table = "\\n| Transaction | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% | Status |\\n"
                     txn_table += "|------------|-----------|-------------|-----|--------------|----------------|-----|---------|--------|\\n"
@@ -469,7 +353,7 @@ Format: Professional, concise, non-technical language suitable for stakeholder p
                     txn_table = "No baseline data available"
                     baseline_summary = {}
                 
-                report_question = f"""Generate a detailed engineering report for test {latest_test} for Dev/QA teams.
+                st.session_state.pending_question = f"""Generate a detailed engineering report for test {latest_test} for Dev/QA teams.
 
 Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
 
@@ -509,35 +393,10 @@ Create a technical report with:
    - Optimization recommendations
 
 Format: Technical depth suitable for engineers. Use the ACTUAL data provided above - do not make up transaction names like Login, Search, Checkout."""
-                
-                st.session_state.pending_question = report_question
-            else:
-                st.session_state.pending_question = "No tests found in database."
-            st.rerun()
-    
-    with col3:
-        if st.button("📊 Stakeholder Summary"):
-            # Pre-fetch actual data to prevent hallucination
-            analyzer = st.session_state.analyzer
-            tests = analyzer.data_source.list_tests(limit=1)
-            if tests:
-                latest_test = tests[0]
-                
-                # Get baseline comparison with ACTUAL data
-                from mcp_server.tools.baseline import get_baseline_comparison
-                baseline_result = get_baseline_comparison(latest_test, analyzer=analyzer)
-                
-                # Get prediction
-                pred_result = analyzer.predict_test(latest_test)
-                conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
-                
-                # Get test details
-                test_df = analyzer.data_source.get_test_by_id(latest_test)
-                
+            
+            elif report_type == 'stakeholder_report':
                 if 'error' not in baseline_result:
                     summary = baseline_result['summary']
-                    
-                    # Format quality metrics table (top 5 by deviation)
                     txns_sorted = sorted([t for t in baseline_result['transactions'] if t['has_baseline']], 
                                        key=lambda x: x['deviation']['p95_pct'], reverse=True)[:5]
                     qa_table = "\\n| Transaction | P95 | Baseline P95 | Δ% | Status |\\n"
@@ -549,7 +408,7 @@ Format: Technical depth suitable for engineers. Use the ACTUAL data provided abo
                     summary = {}
                     qa_table = "No baseline data available"
                 
-                report_question = f"""Generate a stakeholder summary for test {latest_test}.
+                st.session_state.pending_question = f"""Generate a stakeholder summary for test {latest_test}.
 
 ACTUAL TEST DATA (DO NOT MODIFY - USE EXACT TRANSACTION NAMES):
 
@@ -587,10 +446,100 @@ Create a stakeholder summary with:
    - Brief justification
 
 Format: Brief, business-focused. Use ACTUAL transaction names from the data above."""
-                
-                st.session_state.pending_question = report_question
-            else:
-                st.session_state.pending_question = "No tests found in database."
+        else:
+            st.session_state.pending_question = "No tests found in database."
+        
+        st.rerun()
+    
+    # Process pending question BEFORE rendering any UI (prevents duplication)
+    # This processes the LLM call, saves to history, then reruns for clean render
+    if st.session_state.pending_question:
+        question = st.session_state.pending_question
+        st.session_state.pending_question = None
+        
+        with st.spinner("🤖 Processing your question..."):
+            analyzer = st.session_state.analyzer
+            conversation_history = st.session_state.conversation_history
+            try:
+                result = analyzer.ask(
+                    question,
+                    conversation_history=conversation_history
+                )
+                tools_used = result.get('tools_used', [])
+                tools_info = f"\n\n*🔧 Tools: {', '.join(tools_used)}*" if tools_used else ""
+                answer = result['answer'] + tools_info
+            except Exception as e:
+                answer = f"❌ Error: {e}"
+        
+        st.session_state.conversation_history.append((question, answer))
+        st.rerun()
+    
+    # === Now render all UI (no blocking calls above this point) ===
+    st.markdown("### 💬 Ask Questions About Your Tests")
+    st.markdown("**MCP Enabled:**")
+    st.markdown("Try: *'What are the last 5 test runs?'*, *'Show me failed tests'*, *'Compare LoadTest_001 and LoadTest_002'*")
+    
+    # Chat history
+    chat_container = st.container()
+    
+    with chat_container:
+        for i, (question, answer) in enumerate(st.session_state.conversation_history):
+            with st.chat_message("user"):
+                st.write(question)
+            with st.chat_message("assistant"):
+                st.markdown(answer)
+    
+    # Question input
+    question = st.chat_input("Ask a question about your test data...")
+    
+    if question:
+        st.session_state.pending_question = question
+        st.rerun()
+    
+    # Quick questions
+    st.markdown("---")
+    st.markdown("**💡 Quick Questions :**")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📋 Last 5 tests?"):
+            st.session_state.pending_question = "What are the last 5 test runs?"
+            st.rerun()
+    
+    with col2:
+        if st.button("❌ Failed tests?"):
+            st.session_state.pending_question = "Show me all failed tests"
+            st.rerun()
+    
+    with col3:
+        if st.button("📊 Pass rate?"):
+            st.session_state.pending_question = "What is the overall pass rate?"
+            st.rerun()
+    
+    with col4:
+        if st.button("🔍 Summarize last test"):
+            st.session_state.generate_report_type = 'summary'
+            st.rerun()
+    
+    # Report generation
+    st.markdown("---")
+    st.markdown("**📄 Generate Reports (Last Test):**")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📝 PO Sign-Off Report"):
+            st.session_state.generate_report_type = 'po_report'
+            st.rerun()
+    
+    with col2:
+        if st.button("🔬 Dev/QA Report"):
+            st.session_state.generate_report_type = 'dev_report'
+            st.rerun()
+    
+    with col3:
+        if st.button("📊 Stakeholder Summary"):
+            st.session_state.generate_report_type = 'stakeholder_report'
             st.rerun()
 
 # ============================================================================
