@@ -888,7 +888,10 @@ elif page == "🔍 Deep Dive":
                 st.markdown("---")
                 st.markdown("### 📝 Conversation")
                 
-                for i, (q, a) in enumerate(st.session_state.test_chat_history[selected_test]):
+                history = st.session_state.test_chat_history[selected_test]
+                total = len(history)
+                for i, (q, a) in enumerate(reversed(history)):
+                    orig_idx = total - 1 - i  # original index for unique keys
                     # Question
                     st.markdown(f"**👤 You:** {q}")
                     
@@ -901,12 +904,12 @@ elif page == "🔍 Deep Dive":
                         st.download_button(
                             "📥 Download as Markdown",
                             f"# Question\n{q}\n\n# Answer\n{a}",
-                            file_name=f"{selected_test}_Q{i+1}.md",
+                            file_name=f"{selected_test}_Q{orig_idx+1}.md",
                             mime="text/markdown",
-                            key=f"download_qa_{selected_test}_{i}"
+                            key=f"download_qa_{selected_test}_{orig_idx}"
                         )
                     
-                    if i < len(st.session_state.test_chat_history[selected_test]) - 1:
+                    if i < total - 1:
                         st.markdown("---")
 
 # ============================================================================
