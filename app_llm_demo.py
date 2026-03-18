@@ -191,63 +191,72 @@ if mode == 'academic':
     # Academic mode: Allow professors to input their own API key
     with st.sidebar:
         st.markdown("### 🔑 API Configuration")
-        st.markdown("*For Demo: Enter your LLM credentials below*")
         
         # Check if API key is in environment (from .env file)
         default_key = os.getenv('OPENAI_API_KEY', '')
         default_model = os.getenv('OPENAI_MODEL', 'gpt-4.1')
         
-        # API Key input with submit button
-        api_key_input = st.text_input(
-            "LLM API Key",
-            value=st.session_state.submitted_api_key if st.session_state.submitted_api_key else default_key,
-            type="password",
-            placeholder="Enter your API key...",
-            help="Enter your API key for OpenAI, Anthropic Claude, or other LLM provider"
-        )
+        # Check if both are configured
+        api_configured = bool(st.session_state.submitted_api_key or default_key)
+        model_configured = bool(st.session_state.submitted_model or default_model)
+        both_configured = api_configured and model_configured
         
-        if st.button("🔒 Submit API Key", type="primary", use_container_width=True):
-            if api_key_input:
-                st.session_state.submitted_api_key = api_key_input
-                os.environ['OPENAI_API_KEY'] = api_key_input
-                # Reset analyzer to reinitialize
-                st.session_state.analyzer = None
-                st.session_state.df = None
-                st.success("✅ API key submitted!")
-                st.rerun()
-            else:
-                st.error("❌ Please enter an API key")
-        
-        st.markdown("---")
-        
-        # Model input with submit button
-        model_input = st.text_input(
-            "LLM Model",
-            value=st.session_state.submitted_model if st.session_state.submitted_model else default_model,
-            placeholder="e.g., gpt-4-turbo-preview, claude-3-opus...",
-            help="Enter the model name for your LLM provider"
-        )
-        
-        if st.button("🔧 Submit Model", use_container_width=True):
-            if model_input:
-                st.session_state.submitted_model = model_input
-                os.environ['OPENAI_MODEL'] = model_input
-                # Reset analyzer to reinitialize
-                st.session_state.analyzer = None
-                st.session_state.df = None
-                st.success("✅ Model submitted!")
-                st.rerun()
-            else:
-                st.error("❌ Please enter a model name")
-        
-        # Show current configuration status
-        if st.session_state.submitted_api_key:
-            st.info(f"**API Key:** Configured ✓")
+        # Show status summary
+        if both_configured:
+            st.success("✅ Configured")
+            if st.session_state.submitted_model:
+                st.caption(f"Model: {st.session_state.submitted_model}")
         else:
-            st.warning("⚠️ No API key submitted yet")
+            st.warning("⚠️ Configuration required")
         
-        if st.session_state.submitted_model:
-            st.info(f"**Model:** {st.session_state.submitted_model}")
+        # Collapsible configuration (collapsed after both are submitted)
+        with st.expander("🔧 Configure Credentials", expanded=not both_configured):
+            st.markdown("*For Demo: Enter your LLM credentials below*")
+            
+            # API Key input with submit button
+            api_key_input = st.text_input(
+                "LLM API Key",
+                value=st.session_state.submitted_api_key if st.session_state.submitted_api_key else default_key,
+                type="password",
+                placeholder="Enter your API key...",
+                help="Enter your API key for OpenAI, Anthropic Claude, or other LLM provider",
+                key="api_key_input"
+            )
+            
+            if st.button("🔒 Submit API Key", type="primary", use_container_width=True):
+                if api_key_input:
+                    st.session_state.submitted_api_key = api_key_input
+                    os.environ['OPENAI_API_KEY'] = api_key_input
+                    # Reset analyzer to reinitialize
+                    st.session_state.analyzer = None
+                    st.session_state.df = None
+                    st.success("✅ API key submitted!")
+                    st.rerun()
+                else:
+                    st.error("❌ Please enter an API key")
+            
+            st.markdown("---")
+            
+            # Model input with submit button
+            model_input = st.text_input(
+                "LLM Model",
+                value=st.session_state.submitted_model if st.session_state.submitted_model else default_model,
+                placeholder="e.g., gpt-4.1, claude-3-opus...",
+                help="Enter the model name for your LLM provider",
+                key="model_input"
+            )
+            
+            if st.button("🔧 Submit Model", use_container_width=True):
+                if model_input:
+                    st.session_state.submitted_model = model_input
+                    os.environ['OPENAI_MODEL'] = model_input
+                    # Reset analyzer to reinitialize
+                    st.session_state.analyzer = None
+                    st.session_state.df = None
+                    st.success("✅ Model submitted!")
+                    st.rerun()
+                else:
+                    st.error("❌ Please enter a model name")
         
         st.markdown("---")
     
@@ -284,13 +293,13 @@ if not initialize_system():
 
 # Sidebar - Additional Configuration
 with st.sidebar:
- 
+    
     st.markdown("### 🎯 Navigation")
     page = st.radio(
         "Choose a view:",
         ["💬 Chat Analysis", "📈 Test Overview", "🔍 Deep Dive", "⚖️ Compare Tests"],
-        label_visibility="collapsed")
-    
+        label_visibility="collapsed"
+    )
     
     st.markdown("---")
     st.markdown("### 🎯 Classifier Model")
