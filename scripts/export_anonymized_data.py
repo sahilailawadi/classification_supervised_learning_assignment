@@ -23,6 +23,39 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
+def derive_test_type(build_version: str) -> str:
+    """
+    Classify a test run by its build_version naming pattern.
+    
+    Returns:
+        'endurance'    — Chat_Endurance_*
+        'load_test'    — Chat_LoadTest_*, Chat_Loadtest_*, Chat Web App Deploy_*,
+                         Chat - Function - CD_*
+        'experimental' — BAPIS_*, Mercury_DB_*, db_test* (should already be excluded)
+        'unknown'      — anything else
+    """
+    if not build_version or pd.isna(build_version):
+        return "load_test"  # default: treat empty build_version as load_test
+
+    bv = str(build_version).strip()
+
+    if re.match(r"(?i)chat[_ ]endurance", bv):
+        return "endurance"
+    elif re.match(r"(?i)(chat[_ ]load|chat web app deploy|chat - function)", bv):
+        return "load_test"
+    elif re.match(r"(?i)(bapis|mercury_db|db_test)", bv):
+        return "experimental"
+    else:
+        return "load_test"  # default for unrecognized patterns
+
+
+def add_test_type(df: pd.DataFrame) -> pd.DataFrame:
+    """Add test_type column derived from build_version."""
+    df = df.copy()
+    df["test_type"] = df["build_version"].apply(derive_test_type)
+    return df
+
+
 def extract_from_csv(limit: int = 75) -> pd.DataFrame:
     """
     Extract diverse set of tests from training_data.csv.
@@ -132,6 +165,63 @@ def anonymize_version(version: str) -> str:
     return f"v{major}.{minor}"
 
 
+def create_transaction_mapping(df: pd.DataFrame) -> Dict[str, str]:
+    """
+    Create mapping of real transaction names to sanitized names.
+    
+    Categorizes transactions into groups for more realistic sanitized names:
+    - API endpoints (/path/endpoint) -> API_001, API_002, etc.
+    - Authentication paths (AuthPath_*) -> Auth_001, Auth_002, etc.
+    - BAPIS operations (BAPIS_*) -> Service_001, Service_002, etc.
+    - Callbacks (*Callback) -> Callback_001, Callback_002, etc.
+    - Configuration endpoints -> Config_001, Config_002, etc.
+    
+    Args:
+        df: DataFrame with 'transaction_name' column
+        
+    Returns:
+        Dict mapping original names to sanitized names
+    """
+    unique_transactions = sorted(df['transaction_name'].unique())
+    mapping = {}
+    
+    # Categorize transactions
+    api_counter = 1
+    auth_counter = 1
+    service_counter = 1
+    callback_counter = 1
+    config_counter = 1
+    other_counter = 1
+    
+    for original in unique_transactions:
+        if original.startswith('/'):
+            # API endpoint
+            mapping[original] = f"API_{api_counter:03d}"
+            api_counter += 1
+        elif original.startswith('AuthPath_') or 'Auth' in original:
+            # Authentication flow
+            mapping[original] = f"Auth_{auth_counter:03d}"
+            auth_counter += 1
+        elif original.startswith('BAPIS_'):
+            # Service operation
+            mapping[original] = f"Service_{service_counter:03d}"
+            service_counter += 1
+        elif original.endswith('Callback'):
+            # Callback endpoint
+            mapping[original] = f"Callback_{callback_counter:03d}"
+            callback_counter += 1
+        elif 'configuration' in original.lower() or 'config' in original.lower():
+            # Configuration endpoint
+            mapping[original] = f"Config_{config_counter:03d}"
+            config_counter += 1
+        else:
+            # Other
+            mapping[original] = f"Transaction_{other_counter:03d}"
+            other_counter += 1
+    
+    return mapping
+
+
 def anonymize_text(text: str) -> str:
     """
     Remove sensitive information from free text fields.
@@ -172,33 +262,43 @@ def anonymize_text(text: str) -> str:
     return text
 
 
-def anonymize_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, str]]:
+def anonymize_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, str]]:
     """
     Anonymize all sensitive fields in dataframe.
     
     This is the main anonymization function that processes all columns
-    and creates a mapping file for reference.
+    and creates mapping files for reference.
     
     Args:
         df: Original dataframe with sensitive data
         
     Returns:
-        Tuple of (anonymized_df, mapping_dict)
+        Tuple of (anonymized_df, testplan_mapping, transaction_mapping)
     """
     print("\n🔒 Anonymizing sensitive data...")
     df = df.copy()
-    mapping = {}
+    testplan_mapping = {}
     
-    # 1. Anonymize testplan IDs (most important)
+    # 1. Anonymize transaction names FIRST (most important for security)
+    print("  - Anonymizing transaction names...")
+    transaction_mapping = create_transaction_mapping(df)
+    df['transaction_name'] = df['transaction_name'].map(transaction_mapping)
+    print(f"    ✓ Anonymized {len(transaction_mapping)} unique transaction names")
+    print(f"      API endpoints: {sum(1 for v in transaction_mapping.values() if v.startswith('API_'))}")
+    print(f"      Auth flows: {sum(1 for v in transaction_mapping.values() if v.startswith('Auth_'))}")
+    print(f"      Services: {sum(1 for v in transaction_mapping.values() if v.startswith('Service_'))}")
+    print(f"      Callbacks: {sum(1 for v in transaction_mapping.values() if v.startswith('Callback_'))}")
+    
+    # 2. Anonymize testplan IDs
     print("  - Anonymizing testplan IDs...")
     unique_testplans = df['testplan'].unique()
     for i, original in enumerate(unique_testplans, 1):
         anonymized = anonymize_testplan(str(original), i)
-        mapping[anonymized] = str(original)
+        testplan_mapping[anonymized] = str(original)
         df.loc[df['testplan'] == original, 'testplan'] = anonymized
     print(f"    ✓ Anonymized {len(unique_testplans)} unique testplans")
     
-    # 2. Anonymize build versions if column exists
+    # 3. Anonymize build versions if column exists
     if 'build_version' in df.columns:
         print("  - Anonymizing build versions...")
         df['build_version'] = df['build_version'].apply(anonymize_version)
@@ -228,7 +328,7 @@ def anonymize_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, str]]
             df = df.drop(columns=[col])
     
     print("✅ Anonymization complete")
-    return df, mapping
+    return df, testplan_mapping, transaction_mapping
 
 
 def create_metadata_sheet(df: pd.DataFrame) -> pd.DataFrame:
@@ -284,6 +384,60 @@ def create_metadata_sheet(df: pd.DataFrame) -> pd.DataFrame:
     
     print(f"✅ Created metadata for {len(metadata)} tests")
     return metadata
+
+
+def create_anonymized_baselines(transaction_mapping: Dict[str, str]) -> bool:
+    """
+    Create anonymized copy of baselines.pkl using transaction name mapping.
+    
+    This ensures the academic demo can use baseline comparisons without
+    exposing actual transaction names.
+    
+    Args:
+        transaction_mapping: Dict mapping original names to sanitized names
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    import joblib
+    
+    print("\n🗃️  Creating anonymized baselines...")
+    
+    baseline_path = PROJECT_ROOT / "models" / "baselines.pkl"
+    output_path = PROJECT_ROOT / "models" / "baselines_anonymized.pkl"
+    
+    if not baseline_path.exists():
+        print(f"  ⚠️  baselines.pkl not found at {baseline_path}")
+        print("     Run training first: python -m src.train")
+        return False
+    
+    try:
+        # Load original baselines
+        baselines = joblib.load(baseline_path)
+        print(f"  📂 Loaded baselines: {baselines.shape} rows")
+        print(f"     Original transactions: {baselines['transaction_name'].nunique()}")
+        
+        # Apply transaction name mapping
+        baselines_anon = baselines.copy()
+        baselines_anon['transaction_name'] = baselines_anon['transaction_name'].map(transaction_mapping)
+        
+        # Check for unmapped transactions
+        unmapped = baselines_anon['transaction_name'].isna().sum()
+        if unmapped > 0:
+            print(f"  ⚠️  Warning: {unmapped} baseline rows have unmapped transaction names")
+            print("     These will be dropped")
+            baselines_anon = baselines_anon.dropna(subset=['transaction_name'])
+        
+        # Save anonymized baselines
+        joblib.dump(baselines_anon, output_path)
+        print(f"  ✅ Anonymized baselines saved: {output_path.name}")
+        print(f"     Sanitized transactions: {baselines_anon['transaction_name'].nunique()}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"  ❌ Failed to create anonymized baselines: {e}")
+        return False
 
 
 def validate_anonymization(df: pd.DataFrame, mapping: Dict[str, str]) -> bool:
@@ -369,7 +523,8 @@ def main():
     args = parser.parse_args()
     
     OUTPUT_FILE = PROJECT_ROOT / "data_exports" / args.output
-    MAPPING_FILE = PROJECT_ROOT / "local" / ".anonymization_map.json"
+    TESTPLAN_MAPPING_FILE = PROJECT_ROOT / "local" / ".testplan_anonymization_map.json"
+    TRANSACTION_MAPPING_FILE = PROJECT_ROOT / "local" / ".transaction_anonymization_map.json"
     
     print("=" * 60)
     print("📦 ACADEMIC DATA EXPORT & ANONYMIZATION")
@@ -379,22 +534,33 @@ def main():
         # Step 1: Extract from CSV
         df = extract_from_csv(args.num_tests)
         
-        # Step 2: Anonymize
-        df_anon, mapping = anonymize_dataframe(df)
+        # Step 2: Add test_type column (required for baseline matching)
+        print("\n🏷️  Adding test_type column...")
+        df = add_test_type(df)
+        test_type_counts = df['test_type'].value_counts().to_dict()
+        print(f"  ✅ Test types: {test_type_counts}")
         
-        # Step 3: Create metadata
+        # Step 3: Anonymize
+        df_anon, testplan_mapping, transaction_mapping = anonymize_dataframe(df)
+        
+        # Step 4: Create metadata
         metadata = create_metadata_sheet(df_anon)
         
-        # Step 4: Validate (optional)
+        # Step 5: Create anonymized baselines
+        baselines_success = create_anonymized_baselines(transaction_mapping)
+        if not baselines_success:
+            print("\n⚠️  Baseline anonymization failed - continuing with data export")
+        
+        # Step 6: Validate (optional)
         if not args.skip_validation:
-            if not validate_anonymization(df_anon, mapping):
+            if not validate_anonymization(df_anon, testplan_mapping):
                 print("\n⚠️  Validation failed. Review and fix issues before proceeding.")
                 response = input("Continue anyway? (yes/no): ").strip().lower()
                 if response != 'yes':
                     print("❌ Export cancelled")
                     return 1
         
-        # Step 5: Save to Excel
+        # Step 7: Save to Excel
         print(f"\n💾 Saving to Excel: {OUTPUT_FILE}")
         OUTPUT_FILE.parent.mkdir(exist_ok=True, parents=True)
         
@@ -406,28 +572,42 @@ def main():
         print(f"   📋 Sheet 1: test_runs ({len(df_anon)} rows)")
         print(f"   📋 Sheet 2: metadata ({len(metadata)} rows)")
         
-        # Step 6: Save mapping
-        print(f"\n🗺️  Saving anonymization mapping: {MAPPING_FILE}")
-        MAPPING_FILE.parent.mkdir(exist_ok=True, parents=True)
+        # Step 8: Save mappings
+        print(f"\n🗺️  Saving anonymization mappings:")
+        TESTPLAN_MAPPING_FILE.parent.mkdir(exist_ok=True, parents=True)
         
-        with open(MAPPING_FILE, 'w') as f:
-            json.dump(mapping, f, indent=2)
+        with open(TESTPLAN_MAPPING_FILE, 'w') as f:
+            json.dump(testplan_mapping, f, indent=2)
+        print(f"   ✅ Testplan mapping: {TESTPLAN_MAPPING_FILE.name}")
         
-        print(f"✅ Mapping saved (⚠️  DO NOT COMMIT THIS FILE)")
+        with open(TRANSACTION_MAPPING_FILE, 'w') as f:
+            # Invert mapping for easier lookup (sanitized -> original)
+            inverted_txn_mapping = {v: k for k, v in transaction_mapping.items()}
+            json.dump(inverted_txn_mapping, f, indent=2)
+        print(f"   ✅ Transaction mapping: {TRANSACTION_MAPPING_FILE.name}")
+        print(f"   ⚠️  DO NOT COMMIT THESE FILES - ALREADY IN .gitignore")
         
         # Summary
         print("\n" + "=" * 60)
         print("✨ EXPORT COMPLETE")
         print("=" * 60)
-        print(f"📁 Academic Excel: {OUTPUT_FILE}")
-        print(f"🗺️  Mapping file:   {MAPPING_FILE}")
-        print(f"📊 Tests exported:  {len(df_anon)}")
-        print(f"🔒 Security:        All sensitive data anonymized")
+        print(f"📁 Academic Excel:        {OUTPUT_FILE}")
+        print(f"🗺️  Testplan mapping:      {TESTPLAN_MAPPING_FILE}")
+        print(f"🗺️  Transaction mapping:   {TRANSACTION_MAPPING_FILE}")
+        if baselines_success:
+            print(f"🗃️  Anonymized baselines:  models/baselines_anonymized.pkl")
+        print(f"📊 Tests exported:        {len(df_anon)}")
+        print(f"🔐 Transaction names:     {len(transaction_mapping)} sanitized")
+        print(f"    - API endpoints:      {sum(1 for v in transaction_mapping.values() if v.startswith('API_'))}")
+        print(f"    - Auth flows:         {sum(1 for v in transaction_mapping.values() if v.startswith('Auth_'))}")
+        print(f"    - Services:           {sum(1 for v in transaction_mapping.values() if v.startswith('Service_'))}")
+        print(f"🔒 Security:              All transaction names sanitized")
         print("\n📌 NEXT STEPS:")
-        print("   1. Open Excel file and manually verify anonymization")
-        print("   2. Confirm no Comcast-specific information is visible")
-        print("   3. Test loading with pandas: pd.read_excel('data_exports/academic_demo_data.xlsx')")
-        print("   4. Do NOT commit local/.anonymization_map.json")
+        print("   1. Open Excel file and verify anonymization")
+        print("   2. Confirm no internal API structure is visible")
+        print("   3. Transaction names should be generic (API_001, Auth_001, etc.)")
+        print("   4. Test with: python -m src.predict --test-file data_exports/academic_demo_data.xlsx")
+        print("   5. Do NOT commit local/*.json mapping files")
         print("=" * 60)
         
         return 0

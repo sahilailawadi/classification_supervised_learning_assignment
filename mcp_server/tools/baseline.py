@@ -4,6 +4,7 @@ MCP tool: get_baseline_comparison
 Compare a test against the classifier's actual baseline data.
 """
 
+import os
 import sys
 from pathlib import Path
 import pandas as pd
@@ -38,15 +39,28 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
     if analyzer is None:
         analyzer = TestAnalyzer()
     
-    # Load baselines used by classifier
-    baseline_path = project_root / "models" / "baselines.pkl"
+    # Load baselines used by classifier (mode-aware)
+    mode = os.getenv('LLM_MODE', 'work')
+    
+    if mode == 'academic':
+        # Try anonymized baselines first
+        baseline_path = project_root / "models" / "baselines_anonymized.pkl"
+        if not baseline_path.exists():
+            # Fallback to regular baselines with warning
+            baseline_path = project_root / "models" / "baselines.pkl"
+            if baseline_path.exists():
+                print("⚠️  Using baselines.pkl in academic mode (baselines_anonymized.pkl not found)")
+    else:
+        baseline_path = project_root / "models" / "baselines.pkl"
+    
     if not baseline_path.exists():
         return {
-            'error': 'Baselines not found. Run training first to generate baselines.pkl',
+            'error': f'Baselines not found at {baseline_path}. Run training first.',
             'testplan': testplan
         }
     
     baselines = joblib.load(baseline_path)
+    print(f"📊 Loaded baselines from {baseline_path.name} ({mode} mode)")
     
     # Get test data
     df_test = analyzer.data_source.get_test_by_id(testplan)
@@ -54,21 +68,27 @@ def get_baseline_comparison(testplan: str, analyzer: Optional[TestAnalyzer] = No
     if len(df_test) == 0:
         return {'error': f'Test {testplan} not found'}
     
-    # Derive test_type from build_version (same logic as features.py)
-    def derive_test_type(build_version):
-        if pd.isna(build_version) or build_version == '':
-            return 'unknown'
-        bv_lower = str(build_version).lower()
-        if 'load' in bv_lower:
-            return 'load_test'
-        elif 'stress' in bv_lower:
-            return 'stress_test'
-        elif 'soak' in bv_lower:
-            return 'soak_test'
-        else:
-            return 'load_test'  # default
-    
-    df_test['test_type'] = df_test['build_version'].apply(derive_test_type)
+    # Derive test_type from build_version if not already present (same logic as features.py)
+    if 'test_type' not in df_test.columns or df_test['test_type'].isna().all():
+        def derive_test_type(build_version):
+            if pd.isna(build_version) or build_version == '':
+                return 'load_test'  # default
+            bv_lower = str(build_version).lower()
+            if 'endurance' in bv_lower:
+                return 'endurance'
+            elif 'load' in bv_lower:
+                return 'load_test'
+            elif 'stress' in bv_lower:
+                return 'stress_test'
+            elif 'soak' in bv_lower:
+                return 'soak_test'
+            else:
+                return 'load_test'  # default
+        
+        df_test['test_type'] = df_test['build_version'].apply(derive_test_type)
+        print(f"  ℹ️  Derived test_type from build_version")
+    else:
+        print(f"  ℹ️  Using existing test_type column from data")
     
     # Extract test metadata
     test_info = df_test.iloc[0]

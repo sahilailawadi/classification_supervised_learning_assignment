@@ -1,14 +1,22 @@
 """
 predict.py — Standalone prediction script (professor deliverable).
 
-Loads the exported trained model, scaler, and baselines, then runs 3 test cases
-demonstrating pass/fail classification with structured reasons. No database
-connection or training data required.
+Loads the exported trained model, scaler, and baselines, then runs predictions
+on test data. Supports multiple input modes.
 
 Usage:
+    # Test with hardcoded test cases (default)
     python -m src.predict
-    python -m src.predict --test-cases test_cases/test_cases.json
+    
+    # Test with Excel file (academic demo data)
+    python -m src.predict --test-file data_exports/academic_demo_data.xlsx
+    python -m src.predict --test-file data_exports/academic_demo_data.xlsx --limit 5
+    
+    # Test specific testplan from database
     python -m src.predict --testplan LoadTest_20260227T060941Z
+    
+    # Custom test cases
+    python -m src.predict --test-cases test_cases/my_cases.json
 """
 
 import os
@@ -85,6 +93,131 @@ def load_test_cases(path: str = "test_cases/test_cases.json") -> list[dict]:
 
     print(f"  Loaded {len(cases)} test cases from {path}")
     return cases
+
+
+def predict_from_excel(model, scaler, excel_path: str, limit: int = None):
+    """
+    Load test data from Excel file, build features, and predict.
+    
+    This is the primary way to test the anonymized academic data.
+    """
+    try:
+        from src.features import build_features
+    except ImportError as e:
+        print(f"Error: Feature module not available: {e}")
+        sys.exit(1)
+    
+    print(f"\n{'='*60}")
+    print(f"PREDICTING FROM EXCEL: {excel_path}")
+    print(f"{'='*60}\n")
+    
+    if not os.path.exists(excel_path):
+        print(f"❌ Excel file not found: {excel_path}")
+        sys.exit(1)
+    
+    # Load from Excel
+    print(f"📂 Loading data from {os.path.basename(excel_path)}...")
+    df_raw = pd.read_excel(excel_path, sheet_name='test_runs')
+    
+    print(f"✓ Loaded {len(df_raw)} transaction rows")
+    print(f"  Unique testplans: {df_raw['testplan'].nunique()}")
+    print(f"  Unique transactions: {df_raw['transaction_name'].nunique()}")
+    
+    # Get unique testplans
+    testplans = df_raw['testplan'].unique()
+    if limit:
+        testplans = testplans[:limit]
+        print(f"  Limiting to first {limit} testplans")
+    
+    print(f"\n📊 Processing {len(testplans)} testplans...\n")
+    
+    results = []
+    for i, testplan in enumerate(testplans, 1):
+        df_test = df_raw[df_raw['testplan'] == testplan].copy()
+        
+        print(f"{'─'*60}")
+        print(f"[{i}/{len(testplans)}] {testplan}")
+        print(f"{'─'*60}")
+        
+        # Build features
+        try:
+            df_features, _ = build_features(df_test, is_training=False)
+            
+            if len(df_features) == 0:
+                print("  ⚠️  No features generated (likely filtered out)")
+                continue
+            
+            # Extract features
+            X = df_features[MODEL_FEATURES].values
+            X_scaled = scaler.transform(X)
+            
+            # Predict
+            prediction = model.predict(X_scaled)[0]
+            label = "PASS ✅" if prediction == 1 else "FAIL ❌"
+            
+            # Probability
+            proba_str = ""
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(X_scaled)[0]
+                confidence = max(proba) * 100
+                proba_str = f" (confidence: {confidence:.1f}%)"
+            
+            # Actual label
+            actual = df_test['exit_code'].iloc[0]
+            actual_label = "PASS" if actual == 1 else "FAIL"
+            match = "✓" if (prediction == 1 and actual == 1) or (prediction == 0 and actual != 1) else "✗"
+            
+            print(f"  Prediction:  {label}{proba_str}")
+            print(f"  Actual:      {actual_label} (exit_code={actual})  [{match} {('Match' if match == '✓' else 'MISMATCH')}]")
+            
+            # Generate reason
+            features_dict = df_features[MODEL_FEATURES].iloc[0].to_dict()
+            reason = generate_reason(features_dict)
+            print(f"  Reason:      {reason}")
+            
+            # Key metrics
+            print(f"  Metrics:")
+            print(f"    - Transactions: {df_test['transaction_name'].nunique()}")
+            print(f"    - Clients: {df_test['num_clients'].iloc[0]}")
+            if 'test_type' in df_test.columns:
+                print(f"    - Test Type: {df_test['test_type'].iloc[0]}")
+            
+            results.append({
+                'testplan': testplan,
+                'prediction': prediction,
+                'actual': actual,
+                'match': match == '✓'
+            })
+            
+        except Exception as e:
+            print(f"  ❌ Error processing testplan: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        print()
+    
+    # Summary
+    print(f"{'='*60}")
+    print(f"SUMMARY")
+    print(f"{'='*60}")
+    print(f"  Tests evaluated: {len(results)}")
+    if results:
+        matches = sum(1 for r in results if r['match'])
+        accuracy = (matches / len(results)) * 100
+        print(f"  Correct: {matches}/{len(results)} ({accuracy:.1f}%)")
+        
+        # Confusion matrix
+        tp = sum(1 for r in results if r['prediction'] == 1 and r['actual'] == 1)
+        tn = sum(1 for r in results if r['prediction'] == 0 and r['actual'] != 1)
+        fp = sum(1 for r in results if r['prediction'] == 1 and r['actual'] != 1)
+        fn = sum(1 for r in results if r['prediction'] == 0 and r['actual'] == 1)
+        
+        print(f"\n  Confusion Matrix:")
+        print(f"    True Positives:  {tp}")
+        print(f"    True Negatives:  {tn}")
+        print(f"    False Positives: {fp}")
+        print(f"    False Negatives: {fn}")
+    print(f"{'='*60}\n")
 
 
 def predict_testplan(model, scaler, testplan: str):
@@ -325,6 +458,14 @@ def main():
         help="Path to test cases JSON file"
     )
     parser.add_argument(
+        "--test-file", type=str, default=None,
+        help="Path to Excel file with test data (e.g., academic_demo_data.xlsx)"
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="Limit number of testplans to process (for --test-file)"
+    )
+    parser.add_argument(
         "--models-dir", type=str, 
         default=os.path.join(PROJECT_ROOT, "models"),
         help="Directory containing model.pkl and scaler.pkl"
@@ -339,6 +480,8 @@ def main():
     
     if args.testplan:
         predict_testplan(model, scaler, args.testplan)
+    elif args.test_file:
+        predict_from_excel(model, scaler, args.test_file, limit=args.limit)
     else:
         cases = load_test_cases(args.test_cases)
         predict_and_explain(model, scaler, cases)

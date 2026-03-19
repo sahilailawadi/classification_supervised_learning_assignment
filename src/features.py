@@ -429,9 +429,30 @@ def build_features(
         print(f"  Saved baselines to {baselines_path}")
     else:
         if baselines is None:
-            print(f"\nStep 2: Loading baselines from {baselines_path}...")
-            baselines = joblib.load(baselines_path)
-            print(f"  Loaded {len(baselines):,} baseline groups")
+            # Mode-aware baseline loading
+            import os
+            mode = os.getenv('LLM_MODE', 'academic').lower()
+            
+            if mode == 'academic':
+                # Try to load anonymized baselines first
+                anon_baselines_path = baselines_path.replace('baselines.pkl', 'baselines_anonymized.pkl')
+                from pathlib import Path
+                if Path(anon_baselines_path).exists():
+                    print(f"\nStep 2: Loading anonymized baselines (academic mode)...")
+                    baselines = joblib.load(anon_baselines_path)
+                    print(f"  ✅ Loaded {len(baselines):,} baseline groups")
+                    print(f"     Sanitized transactions: {baselines['transaction_name'].nunique()}")
+                else:
+                    print(f"\n⚠️  baselines_anonymized.pkl not found at {anon_baselines_path}")
+                    print(f"   Run: python scripts/export_anonymized_data.py")
+                    print(f"   Falling back to regular baselines...\n")
+                    print(f"Step 2: Loading baselines from {baselines_path}...")
+                    baselines = joblib.load(baselines_path)
+                    print(f"  Loaded {len(baselines):,} baseline groups")
+            else:
+                print(f"\nStep 2: Loading baselines from {baselines_path}...")
+                baselines = joblib.load(baselines_path)
+                print(f"  Loaded {len(baselines):,} baseline groups")
 
     # Step 3: Per-transaction deviations
     print("\nStep 3: Computing per-transaction % deviations...")
