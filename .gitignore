@@ -14,6 +14,9 @@ data_exports/
 !data_exports/academic_demo_data.xlsx
 *.csv
 
+scripts/
+docs/
+
 # IDE
 .vscode/
 .idea/
@@ -30,6 +33,8 @@ Thumbs.db
 # Local files (anonymization mappings, credentials)
 local/
 .anonymization_map.json
+.testplan_anonymization_map.json
+.transaction_anonymization_map.json
 
 # Work-specific files (kept in finetuning branch only)
 DEPLOY_STREAMLIT_CLOUD.md

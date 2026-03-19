@@ -374,3 +374,171 @@ def format_qa_table(baseline_result, top_n=5):
         table += f"| {txn['name']} | {txn['actual']['p95']:.0f}ms | {txn['baseline']['p95']:.0f}ms | {txn['deviation']['p95_pct']:+.1f}% | {status} |\n"
     
     return table
+
+
+def get_test_comparison_prompt(test1_id, test2_id, df_test1, df_test2):
+    """
+    Comprehensive test-to-test comparison with focused transaction data.
+    
+    Compares key transactions between two tests to identify:
+    - Overall performance winner
+    - Common transactions that regressed/improved
+    - Transaction-specific differences
+    - Anomalies and patterns
+    
+    Args:
+        test1_id: First test identifier
+        test2_id: Second test identifier  
+        df_test1: DataFrame with all transactions from test 1
+        df_test2: DataFrame with all transactions from test 2
+    
+    Returns:
+        Formatted prompt string with focused comparison data
+    """
+    # Summary statistics
+    test1_summary = {
+        'exit_code': df_test1['exit_code'].iloc[0],
+        'result': 'PASS' if df_test1['exit_code'].iloc[0] == 1 else 'FAIL',
+        'transactions': len(df_test1),
+        'avg_p95': df_test1['perc_95'].mean(),
+        'max_p95': df_test1['perc_95'].max(),
+        'avg_rt': df_test1['avg_response_time'].mean(),
+        'max_rt': df_test1['avg_response_time'].max(),
+        'avg_error': df_test1['error_percentage'].mean(),
+        'max_error': df_test1['error_percentage'].max()
+    }
+    
+    test2_summary = {
+        'exit_code': df_test2['exit_code'].iloc[0],
+        'result': 'PASS' if df_test2['exit_code'].iloc[0] == 1 else 'FAIL',
+        'transactions': len(df_test2),
+        'avg_p95': df_test2['perc_95'].mean(),
+        'max_p95': df_test2['perc_95'].max(),
+        'avg_rt': df_test2['avg_response_time'].mean(),
+        'max_rt': df_test2['avg_response_time'].max(),
+        'avg_error': df_test2['error_percentage'].mean(),
+        'max_error': df_test2['error_percentage'].max()
+    }
+    
+    # Get focused transaction sets (not ALL - optimize for token limit)
+    # 1. Top 10 slowest from each test
+    test1_top10 = df_test1.nlargest(10, 'perc_95')[['transaction_name', 'perc_95', 'avg_response_time', 'error_percentage']]
+    test2_top10 = df_test2.nlargest(10, 'perc_95')[['transaction_name', 'perc_95', 'avg_response_time', 'error_percentage']]
+    
+    # 2. Merge common transactions to show side-by-side comparison
+    merged = df_test1[['transaction_name', 'perc_95', 'avg_response_time', 'error_percentage']].merge(
+        df_test2[['transaction_name', 'perc_95', 'avg_response_time', 'error_percentage']],
+        on='transaction_name',
+        suffixes=('_test1', '_test2'),
+        how='inner'
+    )
+    
+    # Calculate changes for common transactions
+    if len(merged) > 0:
+        merged['p95_delta'] = merged['perc_95_test2'] - merged['perc_95_test1']
+        merged['p95_pct_change'] = (merged['p95_delta'] / merged['perc_95_test1'] * 100).fillna(0)
+        merged['rt_delta'] = merged['avg_response_time_test2'] - merged['avg_response_time_test1']
+        merged['error_delta'] = merged['error_percentage_test2'] - merged['error_percentage_test1']
+        
+        # Get biggest regressions and improvements
+        biggest_regressions = merged.nlargest(5, 'p95_pct_change')[['transaction_name', 'perc_95_test1', 'perc_95_test2', 'p95_pct_change']]
+        biggest_improvements = merged.nsmallest(5, 'p95_pct_change')[['transaction_name', 'perc_95_test1', 'perc_95_test2', 'p95_pct_change']]
+        
+        # Overall statistics for common transactions
+        common_stats = {
+            'count': len(merged),
+            'avg_p95_change': merged['p95_pct_change'].mean(),
+            'regressions': (merged['p95_pct_change'] > 10).sum(),
+            'improvements': (merged['p95_pct_change'] < -10).sum(),
+            'stable': ((merged['p95_pct_change'] >= -10) & (merged['p95_pct_change'] <= 10)).sum()
+        }
+    else:
+        biggest_regressions = None
+        biggest_improvements = None
+        common_stats = {'count': 0}
+    
+    # Calculate deltas
+    p95_delta = test2_summary['avg_p95'] - test1_summary['avg_p95']
+    p95_pct_change = (p95_delta / test1_summary['avg_p95'] * 100) if test1_summary['avg_p95'] > 0 else 0
+    
+    rt_delta = test2_summary['avg_rt'] - test1_summary['avg_rt']
+    rt_pct_change = (rt_delta / test1_summary['avg_rt'] * 100) if test1_summary['avg_rt'] > 0 else 0
+    
+    error_delta = test2_summary['avg_error'] - test1_summary['avg_error']
+    
+    # Build compact, focused prompt
+    prompt = f"""# Test Comparison: {test1_id} vs {test2_id}
+
+## Summary Statistics
+
+### Test 1 ({test1_id}):
+- **Result**: {test1_summary['result']} (exit_code={test1_summary['exit_code']})
+- **Transactions**: {test1_summary['transactions']}
+- **Avg P95**: {test1_summary['avg_p95']:.2f} ms (Max: {test1_summary['max_p95']:.2f} ms)
+- **Avg Response Time**: {test1_summary['avg_rt']:.2f} ms (Max: {test1_summary['max_rt']:.2f} ms)
+- **Avg Error Rate**: {test1_summary['avg_error']:.2f}% (Max: {test1_summary['max_error']:.2f}%)
+
+### Test 2 ({test2_id}):
+- **Result**: {test2_summary['result']} (exit_code={test2_summary['exit_code']})
+- **Transactions**: {test2_summary['transactions']}
+- **Avg P95**: {test2_summary['avg_p95']:.2f} ms (Max: {test2_summary['max_p95']:.2f} ms)
+- **Avg Response Time**: {test2_summary['avg_rt']:.2f} ms (Max: {test2_summary['max_rt']:.2f} ms)
+- **Avg Error Rate**: {test2_summary['avg_error']:.2f}% (Max: {test2_summary['max_error']:.2f}%)
+
+### Key Differences:
+- **P95 Change**: {p95_delta:+.2f} ms ({p95_pct_change:+.1f}%)
+- **Avg RT Change**: {rt_delta:+.2f} ms ({rt_pct_change:+.1f}%)
+- **Error Rate Change**: {error_delta:+.2f}%
+- **Result Change**: {'❌ Changed' if test1_summary['result'] != test2_summary['result'] else '✅ Same'}
+
+## Top 10 Slowest Transactions by P95
+
+### Test 1 Top 10:
+{test1_top10.to_string(index=False)}
+
+### Test 2 Top 10:
+{test2_top10.to_string(index=False)}
+"""
+
+    # Add common transaction analysis if available
+    if common_stats['count'] > 0:
+        prompt += f"""
+## Common Transactions Analysis ({common_stats['count']} shared)
+
+### Performance Distribution:
+- **Regressions** (>10% slower): {common_stats['regressions']} transactions
+- **Improvements** (>10% faster): {common_stats['improvements']} transactions
+- **Stable** (±10%): {common_stats['stable']} transactions
+- **Average P95 Change**: {common_stats['avg_p95_change']:+.1f}%
+
+### Top 5 Biggest Regressions:
+{biggest_regressions.to_string(index=False)}
+
+### Top 5 Biggest Improvements:
+{biggest_improvements.to_string(index=False)}
+"""
+    else:
+        prompt += f"""
+## Common Transactions Analysis
+No common transactions found between tests (different test scenarios or transaction names changed).
+"""
+
+    prompt += """
+## Analysis Instructions
+
+Provide a detailed comparison focusing on:
+
+1. **Overall Performance Winner**: Which test performed better and why? Consider P95, Avg RT, and Error Rate.
+
+2. **Transaction-Level Patterns**: 
+   - Are the regressions/improvements isolated to specific transactions or system-wide?
+   - Do the top 10 slowest transactions overlap between tests?
+   - Are there transaction categories (API, Auth, Service) showing consistent patterns?
+
+3. **Root Cause Hypotheses**: What might explain the performance differences?
+
+4. **Actionable Recommendations**: What should be investigated or fixed?
+
+**Note**: Analysis based on top performers and common transaction changes. Full transaction set has {test1_summary['transactions']} (Test 1) and {test2_summary['transactions']} (Test 2) transactions."""
+
+    return prompt

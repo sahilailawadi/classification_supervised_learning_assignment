@@ -39,6 +39,7 @@ from prompts.report_prompts import (
     get_eng_report_prompt_short,
     get_qa_report_prompt_short,
     get_explain_prediction_prompt,
+    get_test_comparison_prompt,
     format_critical_transactions_list,
     format_transaction_table,
     format_qa_table
@@ -293,8 +294,8 @@ if mode == 'academic':
         else:
             st.warning("⚠️ Configuration required")
         
-        # Collapsible configuration (collapsed after both are submitted)
-        with st.expander("🔧 Configure Credentials", expanded=not both_configured):
+        # Collapsible configuration (collapsed after model is submitted)
+        with st.expander("🔧 Configure Credentials", expanded=not model_configured):
             st.markdown("*For Demo: Enter your LLM credentials below*")
             
             # API Key input with submit button
@@ -1012,7 +1013,7 @@ elif page == "⚖️ Compare Tests":
     
     tests = analyzer.data_source.list_tests(limit=50)
     
-    col1, col2, col3 = st.columns([3, 3, 1])
+    col1, col2, col3 = st.columns([4, 4, 2])
     
     with col1:
         test1 = st.selectbox("Test 1:", tests, index=0, key="test1")
@@ -1021,19 +1022,34 @@ elif page == "⚖️ Compare Tests":
         test2 = st.selectbox("Test 2:", tests, index=1 if len(tests) > 1 else 0, key="test2")
     
     with col3:
+        st.write("")  # Add spacing to align with selectbox
         include_baseline = st.checkbox("Include Baseline", value=True)
     
     if st.button("⚖️ Compare All", type="primary"):
         if test1 == test2:
             st.warning("⚠️ Please select two different tests")
         else:
-            with st.spinner("🤖 Performing three-way comparison..."):
+            with st.spinner("🤖 Performing comparison..."):
                 st.markdown("---")
                 
-                # Section 1: Test 1 vs Test 2
+                # Section 1: Test 1 vs Test 2 (Using centralized prompt)
                 st.markdown("### 🔄 Test 1 vs Test 2")
-                comparison = analyzer.compare_tests(test1, test2)
-                st.markdown(comparison)
+                
+                # Fetch detailed transaction data for both tests
+                df_test1 = analyzer.data_source.get_test_by_id(test1)
+                df_test2 = analyzer.data_source.get_test_by_id(test2)
+                
+                # Generate comparison prompt with FULL transaction data
+                comparison_prompt = get_test_comparison_prompt(test1, test2, df_test1, df_test2)
+                
+                # Ask LLM with comprehensive context
+                with st.spinner("🤖 Analyzing transaction-level differences..."):
+                    result = analyzer.ask(
+                        "Provide a detailed comparison analysis of these two tests.",
+                        data_context=comparison_prompt,
+                        conversation_history=[]
+                    )
+                    st.markdown(result['answer'])
                 
                 if include_baseline:
                     # Section 2: Test 1 vs Baseline
