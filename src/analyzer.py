@@ -209,29 +209,56 @@ class TestAnalyzer:
         context = self._build_test_context(result, df_raw, include_transactions)
         
         # Create LLM prompt
-        system_prompt = """You are an expert performance test analyst. Analyze test results and provide actionable insights.
+        system_prompt = """You are an expert performance test analyst conducting a DETAILED DEEP DIVE analysis.
+
+This is NOT a summary - provide thorough, comprehensive analysis with transaction-level detail.
 
 Focus on:
-1. Why the test passed or failed
-2. Key performance indicators and deviations
-3. Specific transactions with issues
-4. Root cause hypotheses
-5. Actionable next steps
+1. Why the test passed or failed (with evidence from baseline comparisons)
+2. Key performance indicators and multi-metric deviations (P95, Avg RT, Error Rate)
+3. DETAILED analysis of each critical/degraded transaction
+4. Root cause hypotheses for performance regressions
+5. Specific, actionable next steps for each issue
 
-Be concise but thorough. Use bullet points and highlight critical issues."""
+Use the comprehensive baseline comparison data provided to support your analysis.
+Be thorough and detailed. Use bullet points, tables, and highlight critical issues."""
         
-        user_prompt = f"""Analyze this performance test result:
+        user_prompt = f"""Perform a DEEP DIVE analysis of this performance test result:
 
 {context}
 
-Provide a comprehensive analysis covering:
-- Overall verdict and confidence
-- Key findings (what stands out?)
-- Problem areas (if any)
-- Root cause analysis
-- Recommended actions
+Provide a COMPREHENSIVE, DETAILED analysis covering:
 
-Format your response in clear sections with markdown."""
+**Overall Assessment:**
+- Verdict (PASS/FAIL) and classifier confidence
+- Summary of baseline comparison results (how many critical/degraded transactions?)
+
+**Critical Issues (Detailed):**
+- For EACH transaction with >50% deviation or >5% error increase:
+  * Transaction name and metrics (P95, Avg RT, Error)
+  * Baseline comparison (actual vs baseline values, % deviation)
+  * Severity assessment
+  * Potential root causes
+  * Recommended investigation steps
+
+**Degraded Transactions (20-50% deviation):**
+- List with baseline comparison details
+- Risk assessment
+
+**Stable/Improved Transactions:**
+- Brief summary (don't list all, just count and highlight any notable improvements)
+
+**Root Cause Analysis:**
+- Patterns across critical transactions
+- Hypotheses for performance regressions
+- Environmental factors to investigate
+
+**Recommended Actions:**
+- Immediate actions (before release)
+- Post-release monitoring
+- Long-term improvements
+
+Format your response with clear markdown sections. Be detailed for critical issues - this is a deep dive, not a summary."""
         
         # Get LLM analysis
         print("   🤖 Querying LLM for analysis...")
@@ -320,7 +347,7 @@ Use tables and bullet points for clarity."""
         df_raw: pd.DataFrame,
         include_transactions: bool
     ) -> str:
-        """Build context string for LLM analysis."""
+        """Build context string for LLM analysis with baseline comparison."""
         lines = []
         
         # Test summary
@@ -356,11 +383,72 @@ Use tables and bullet points for clarity."""
                 value = features[feat_key]
                 lines.append(f"- **{feat_name}**: {value:.4f}")
         
-        # Transaction details
+        # CRITICAL: Add baseline comparison data (anti-hallucination)
+        lines.append("\n## Baseline Comparison")
+        try:
+            from mcp_server.tools.baseline import get_baseline_comparison
+            baseline_result = get_baseline_comparison(result['testplan'], analyzer=self)
+            
+            if 'error' not in baseline_result:
+                baseline_summary = baseline_result['summary']
+                
+                # Multi-metric deviation summary
+                lines.append("### Performance vs Baseline (All Metrics)")
+                lines.append(f"- **P95 Deviation**: Avg {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%, Max {baseline_summary.get('max_p95_deviation_pct', 0):.1f}%")
+                lines.append(f"- **Avg RT Deviation**: Avg {baseline_summary.get('avg_avgrt_deviation_pct', 0):.1f}%, Max {baseline_summary.get('max_avgrt_deviation_pct', 0):.1f}%")
+                lines.append(f"- **Error Rate Change**: Avg {baseline_summary.get('avg_error_delta', 0):+.2f}%, Max {baseline_summary.get('max_error_delta', 0):+.2f}%")
+                
+                # Critical transaction counts by metric type
+                lines.append("\n### Degradation Categories")
+                lines.append(f"- **P95 Critical (>50%)**: {baseline_summary.get('critical_deviations_count', 0)} transactions")
+                lines.append(f"- **P95 Degraded (20-50%)**: {baseline_summary.get('degraded_deviations_count', 0)} transactions")
+                lines.append(f"- **Avg RT Critical (>50%)**: {int(baseline_summary.get('pct_txn_critical_avgrt', 0) * baseline_summary.get('transactions_with_baseline', 0) / 100)} transactions")
+                lines.append(f"- **Avg RT Degraded (20-50%)**: {int(baseline_summary.get('pct_txn_degraded_avgrt', 0) * baseline_summary.get('transactions_with_baseline', 0) / 100)} transactions")
+                
+                # Identify critical transactions by ANY metric (P95, Avg RT, or Error)
+                critical_txns = []
+                for t in baseline_result['transactions']:
+                    if t['has_baseline'] and t['deviation']:
+                        reasons = []
+                        if t['deviation']['p95_pct'] > 50:
+                            reasons.append(f"P95 {t['deviation']['p95_pct']:+.1f}%")
+                        if t['deviation']['avg_rt_pct'] > 50:
+                            reasons.append(f"AvgRT {t['deviation']['avg_rt_pct']:+.1f}%")
+                        if abs(t['deviation']['error_delta']) > 5:  # >5% error increase
+                            reasons.append(f"Error {t['deviation']['error_delta']:+.1f}%")
+                        
+                        if reasons:
+                            critical_txns.append((t, reasons))
+                
+                if critical_txns:
+                    lines.append("\n### Critical Transactions (Multi-Metric View)")
+                    # Sort by P95 deviation first, but show all issues
+                    critical_txns.sort(key=lambda x: x[0]['deviation']['p95_pct'], reverse=True)
+                    for txn, reasons in critical_txns:
+                        lines.append(
+                            f"- **{txn['name']}**:"
+                        )
+                        lines.append(f"  - P95: {txn['actual']['p95']:.0f}ms vs {txn['baseline']['p95']:.0f}ms ({txn['deviation']['p95_pct']:+.1f}%)")
+                        lines.append(f"  - Avg RT: {txn['actual']['avg_rt']:.0f}ms vs {txn['baseline']['avg_rt']:.0f}ms ({txn['deviation']['avg_rt_pct']:+.1f}%)")
+                        lines.append(f"  - Error: {txn['actual']['error_pct']:.2f}% vs {txn['baseline']['error_pct']:.2f}% ({txn['deviation']['error_delta']:+.2f}%)")
+                        lines.append(f"  - **Issues**: {', '.join(reasons)}")
+            else:
+                lines.append("- *No baseline data available for comparison*")
+        except Exception as e:
+            lines.append(f"- *Baseline comparison unavailable: {e}*")
+        
+        # Transaction details with baseline context for ALL transactions
         if include_transactions and len(df_raw) > 0:
-            lines.append("\n## Transaction Details")
-            lines.append("| Transaction | Error % | P95 (ms) | Avg RT (ms) | Requests |")
-            lines.append("|------------|---------|----------|-------------|----------|")
+            lines.append("\n## Transaction Performance Details (All Transactions with Baseline)")
+            
+            # Build baseline lookup dictionary
+            baseline_lookup = {}
+            try:
+                if 'error' not in baseline_result:
+                    for txn_data in baseline_result['transactions']:
+                        baseline_lookup[txn_data['name']] = txn_data
+            except:
+                pass  # baseline_result might not exist if earlier fetch failed
             
             # Group by transaction
             txn_summary = df_raw.groupby('transaction_name').agg({
@@ -370,12 +458,53 @@ Use tables and bullet points for clarity."""
                 'txn_requests': 'sum'
             }).round(2)
             
+            # Enhanced table with baseline columns
+            lines.append("| Transaction | P95 (ms) | Baseline P95 | P95 Dev (%) | Avg RT (ms) | Baseline Avg | AvgRT Dev (%) | Error % | Baseline Err | Err Change | Critical |")
+            lines.append("|------------|----------|--------------|-------------|-------------|--------------|---------------|---------|--------------|------------|----------|")
+            
             for txn, row in txn_summary.iterrows():
-                lines.append(
-                    f"| {txn} | {row['error_percentage']:.2f}% | "
-                    f"{row['perc_95']:.0f} | {row['avg_response_time']:.0f} | "
-                    f"{int(row['txn_requests'])} |"
-                )
+                p95 = row['perc_95']
+                avg_rt = row['avg_response_time']
+                error = row['error_percentage']
+                
+                # Check if baseline exists
+                if txn in baseline_lookup:
+                    bl_data = baseline_lookup[txn]
+                    if bl_data['has_baseline'] and bl_data['deviation']:
+                        baseline = bl_data['baseline']
+                        deviation = bl_data['deviation']
+                        
+                        # Mark critical issues
+                        critical_flags = []
+                        if deviation['p95_pct'] > 50:
+                            critical_flags.append("P95")
+                        if deviation['avg_rt_pct'] > 50:
+                            critical_flags.append("AvgRT")
+                        if abs(deviation['error_delta']) > 5:
+                            critical_flags.append("Error")
+                        
+                        critical_str = ", ".join(critical_flags) if critical_flags else "No"
+                        
+                        lines.append(
+                            f"| {txn} | {p95:.0f} | {baseline['p95']:.0f} | {deviation['p95_pct']:+.1f}% | "
+                            f"{avg_rt:.0f} | {baseline['avg_rt']:.0f} | {deviation['avg_rt_pct']:+.1f}% | "
+                            f"{error:.2f}% | {baseline['error_pct']:.2f}% | {deviation['error_delta']:+.2f}% | "
+                            f"{critical_str} |"
+                        )
+                    else:
+                        # Has entry but no baseline
+                        lines.append(
+                            f"| {txn} | {p95:.0f} | N/A | N/A | "
+                            f"{avg_rt:.0f} | N/A | N/A | "
+                            f"{error:.2f}% | N/A | N/A | No baseline |"
+                        )
+                else:
+                    # No baseline data for this transaction
+                    lines.append(
+                        f"| {txn} | {p95:.0f} | N/A | N/A | "
+                        f"{avg_rt:.0f} | N/A | N/A | "
+                        f"{error:.2f}% | N/A | N/A | No baseline |"
+                    )
         
         return "\n".join(lines)
     
@@ -505,16 +634,88 @@ Use tables and bullet points for clarity."""
         
         lines.append("")
         
-        # Transaction performance
+        # CRITICAL: Add baseline comparison (anti-hallucination)
+        lines.append("## Baseline Comparison")
+        lines.append("")
+        try:
+            from mcp_server.tools.baseline import get_baseline_comparison
+            baseline_result = get_baseline_comparison(testplan, analyzer=self)
+            
+            if 'error' not in baseline_result:
+                baseline_summary = baseline_result['summary']
+                lines.append(f"**Performance vs Historical Baseline (Multi-Metric Analysis):**")
+                lines.append("")
+                
+                # Show all metric deviations
+                lines.append("**Deviation Summary:**")
+                lines.append(f"- P95 Response Time: Avg {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%, Max {baseline_summary.get('max_p95_deviation_pct', 0):.1f}%")
+                lines.append(f"- Average Response Time: Avg {baseline_summary.get('avg_avgrt_deviation_pct', 0):.1f}%, Max {baseline_summary.get('max_avgrt_deviation_pct', 0):.1f}%")
+                lines.append(f"- Error Rate: Avg change {baseline_summary.get('avg_error_delta', 0):+.2f}%, Max change {baseline_summary.get('max_error_delta', 0):+.2f}%")
+                lines.append("")
+                
+                lines.append("**Degradation Categories:**")
+                lines.append(f"- P95 Critical (>50% deviation): {baseline_summary.get('critical_deviations_count', 0)} transactions")
+                lines.append(f"- P95 Degraded (20-50% deviation): {baseline_summary.get('degraded_deviations_count', 0)} transactions")
+                p95_critical_pct = baseline_summary.get('pct_txn_critical_p95', 0)
+                avgrt_critical_pct = baseline_summary.get('pct_txn_critical_avgrt', 0)
+                lines.append(f"- Avg RT Critical: {avgrt_critical_pct:.1f}% of transactions with baseline")
+                lines.append("")
+                
+                # Identify problematic transactions by ANY metric
+                problem_txns = []
+                for t in baseline_result['transactions']:
+                    if t['has_baseline'] and t['deviation']:
+                        issues = []
+                        if t['deviation']['p95_pct'] > 50:
+                            issues.append(f"P95 {t['deviation']['p95_pct']:+.1f}%")
+                        if t['deviation']['avg_rt_pct'] > 50:
+                            issues.append(f"AvgRT {t['deviation']['avg_rt_pct']:+.1f}%")
+                        if abs(t['deviation']['error_delta']) > 5:
+                            issues.append(f"Error {t['deviation']['error_delta']:+.2f}%")
+                        
+                        if issues:
+                            problem_txns.append((t, issues))
+                
+                if problem_txns:
+                    lines.append("**Transactions with Critical Issues (Multi-Metric View):**")
+                    problem_txns.sort(key=lambda x: x[0]['deviation']['p95_pct'], reverse=True)
+                    for txn, issues in problem_txns:
+                        lines.append(f"- **{txn['name']}**")
+                        lines.append(f"  - P95: {txn['actual']['p95']:.0f}ms vs {txn['baseline']['p95']:.0f}ms baseline ({txn['deviation']['p95_pct']:+.1f}%)")
+                        lines.append(f"  - Avg RT: {txn['actual']['avg_rt']:.0f}ms vs {txn['baseline']['avg_rt']:.0f}ms baseline ({txn['deviation']['avg_rt_pct']:+.1f}%)")
+                        lines.append(f"  - Error: {txn['actual']['error_pct']:.2f}% vs {txn['baseline']['error_pct']:.2f}% baseline ({txn['deviation']['error_delta']:+.2f}%)")
+                        lines.append(f"  - **Critical Issues**: {', '.join(issues)}")
+                    lines.append("")
+                else:
+                    lines.append("*All transactions within acceptable thresholds (<50% deviation, <5% error increase)*")
+                    lines.append("")
+            else:
+                lines.append("*No baseline data available for comparison.*")
+                lines.append("")
+        except Exception as e:
+            lines.append(f"*Baseline comparison unavailable: {e}*")
+            lines.append("")
+        
+        # Transaction performance (with baseline for ALL transactions)
         lines.append("## Transaction Performance")
         lines.append("")
         lines.append("Transactions sorted by P95 response time (highest first):")
+        lines.append("*Includes baseline comparison for every transaction where available*")
         lines.append("")
+        
+        # Build baseline lookup dictionary
+        baseline_lookup = {}
+        try:
+            if 'error' not in baseline_result:
+                for txn_data in baseline_result['transactions']:
+                    baseline_lookup[txn_data['name']] = txn_data
+        except:
+            pass  # baseline_result might not exist if earlier fetch failed
         
         # Sort transactions by specified column
         transactions = test_data.sort_values(by=sort_by, ascending=False)
         
-        # Format each transaction
+        # Format each transaction with baseline
         for idx, txn in transactions.iterrows():
             txn_name = txn['transaction_name']
             p95 = txn['perc_95']
@@ -528,16 +729,42 @@ Use tables and bullet points for clarity."""
             elif p95 > 5000:  # >5 seconds
                 status = " 🐌 SLOW"
             
-            lines.append(
-                f"**{txn_name}**{status}\n"
-                f"  - P95: {p95:.2f} ms\n"
-                f"  - Average: {avg_rt:.2f} ms\n"
-                f"  - Error Rate: {error_pct:.2f}%\n"
-            )
+            lines.append(f"**{txn_name}**{status}")
+            lines.append(f"  - P95: {p95:.2f} ms")
+            lines.append(f"  - Average: {avg_rt:.2f} ms")
+            lines.append(f"  - Error Rate: {error_pct:.2f}%")
+            
+            # Add baseline comparison if available
+            if txn_name in baseline_lookup:
+                bl_data = baseline_lookup[txn_name]
+                if bl_data['has_baseline'] and bl_data['deviation']:
+                    # Show baseline values and deviations
+                    baseline = bl_data['baseline']
+                    deviation = bl_data['deviation']
+                    lines.append(f"  - **Baseline P95**: {baseline['p95']:.0f} ms (deviation: {deviation['p95_pct']:+.1f}%)")
+                    lines.append(f"  - **Baseline Avg RT**: {baseline['avg_rt']:.0f} ms (deviation: {deviation['avg_rt_pct']:+.1f}%)")
+                    lines.append(f"  - **Baseline Error**: {baseline['error_pct']:.2f}% (change: {deviation['error_delta']:+.2f}%)")
+                    
+                    # Mark if critical
+                    critical_flags = []
+                    if deviation['p95_pct'] > 50:
+                        critical_flags.append("P95 CRITICAL >50%")
+                    if deviation['avg_rt_pct'] > 50:
+                        critical_flags.append("AVG RT CRITICAL >50%")
+                    if abs(deviation['error_delta']) > 5:
+                        critical_flags.append("ERROR CRITICAL >5%")
+                    
+                    if critical_flags:
+                        lines.append(f"  - ⚠️ **Critical Issues**: {', '.join(critical_flags)}")
+                else:
+                    lines.append(f"  - *No baseline data available for this transaction*")
+            else:
+                lines.append(f"  - *No baseline data available for this transaction*")
+            
+            lines.append("")  # Blank line between transactions
         
-        lines.append("")
         lines.append("---")
-        lines.append("*This data includes ALL transactions from the actual test run.*")
+        lines.append("*This data includes ALL transactions from the actual test run with baseline comparison.*")
         
         return "\n".join(lines)
     

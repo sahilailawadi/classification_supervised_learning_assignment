@@ -2,7 +2,7 @@
 
 **INFO 629 Assignment — LLM Integration with Supervised Learning**
 
-This project extends the base Random Forest classifier with LLM-powered analysis, MCP tool integration, and an interactive Streamlit UI. Ask natural language questions about performance tests, generate reports, and get AI-powered insights — all grounded in real data to prevent hallucination.
+This project extends the base Random Forest classifier from Assignment 3 with LLM-powered analysis. The application integrates LLM-powered natural language analysis through an MCP server with four specialized tools (query, detail, compare, baseline), enabling users to ask questions about test results and receive AI-generated insights grounded in real data. The LLM serves two key roles: (1) **Natural Language Interface** — translating user questions into structured tool calls, and (2) **Task Execution** — performing report generation, performance interpretation, test comparison, and metric summarization, all with anti-hallucination safeguards that pre-fetch real data before analysis.
 
 ---
 
@@ -18,6 +18,8 @@ A3_Code/
 │   ├── features.py              # Feature engineering (19 features)
 │   ├── train.py                 # Training pipeline
 │   └── predict.py               # Standalone prediction
+├── prompts/
+│   └── report_prompts.py        # Centralized prompt templates for reports
 ├── mcp_server/                  # MCP tool server (4 tools)
 │   ├── server.py                # MCP server entry point
 │   └── tools/

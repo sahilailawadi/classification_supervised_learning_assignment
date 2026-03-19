@@ -29,6 +29,21 @@ from src.analyzer import TestAnalyzer
 from src.data_source import get_data_source
 from src.llm_provider import get_llm_provider
 
+# Import centralized prompts
+from prompts.report_prompts import (
+    get_summary_prompt_with_data,
+    get_po_report_prompt_with_data,
+    get_dev_report_prompt_with_data,
+    get_stakeholder_report_prompt_with_data,
+    get_po_report_prompt_short,
+    get_eng_report_prompt_short,
+    get_qa_report_prompt_short,
+    get_explain_prediction_prompt,
+    format_critical_transactions_list,
+    format_transaction_table,
+    format_qa_table
+)
+
 # Page config
 st.set_page_config(
     page_title="LLM Test Analysis",
@@ -46,6 +61,73 @@ st.markdown("""
     .success-text {color: #28a745;}
     .fail-text {color: #dc3545;}
     .stChatMessage {background: #f8f9fa; border-radius: 0.5rem; padding: 1rem;}
+    
+    .report-container {
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-left: 5px solid #667eea;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .report-container h3 {
+        margin-top: 0;
+        color: #495057;
+    }
+    
+    /* Make radio buttons more prominent */
+    div[data-testid="stSidebar"] .stRadio > div {
+        background-color: white;
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 8px;
+    }
+    
+    div[data-testid="stSidebar"] .stRadio > div > label {
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        padding: 10px 12px !important;
+        border-radius: 6px;
+        margin: 4px 0 !important;
+        display: block;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    div[data-testid="stSidebar"] .stRadio > div > label:hover {
+        background-color: #f0f4ff;
+        transform: translateX(3px);
+    }
+    
+    div[data-testid="stSidebar"] .stRadio input[type="radio"]:checked + div > label {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Style the chat input form to make it prominent */
+    div[data-testid="stForm"] {
+        background: linear-gradient(to right, #f8f9fa, #ffffff);
+        border: 2px solid #667eea;
+        border-radius: 12px;
+        padding: 1.2rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    }
+    
+    div[data-testid="stForm"] input[type="text"] {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-size: 15px;
+    }
+    
+    div[data-testid="stForm"] input[type="text"]:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,6 +150,8 @@ if 'submitted_api_key' not in st.session_state:
     st.session_state.submitted_api_key = None
 if 'submitted_model' not in st.session_state:
     st.session_state.submitted_model = None
+if 'is_processing' not in st.session_state:
+    st.session_state.is_processing = False
 
 def initialize_system():
     """Initialize TestAnalyzer and load data"""
@@ -294,10 +378,21 @@ if not initialize_system():
 # Sidebar - Additional Configuration
 with st.sidebar:
     
-    st.markdown("### 🎯 Navigation")
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                padding: 12px; 
+                border-radius: 10px; 
+                margin-bottom: 10px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+        <h3 style='color: white; margin: 0; text-align: center; font-size: 18px;'>
+            🎯 NAVIGATION
+        </h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
     page = st.radio(
         "Choose a view:",
-        ["💬 Chat Analysis", "📈 Test Overview", "🔍 Deep Dive", "⚖️ Compare Tests"],
+        ["💬 Chat Analysis", "🔍 Deep Dive", "⚖️ Compare Tests", "📈 Testing Overview"],
         label_visibility="collapsed"
     )
     
@@ -390,213 +485,46 @@ if page == "💬 Chat Analysis":
                 pred_result = analyzer.predict_test(latest_test)
                 conf_pct = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
             
+            # Get common data needed for all report types
+            test_df = analyzer.data_source.get_test_by_id(latest_test)
+            test_summary = test_df.groupby('testplan').agg({
+                'perc_95': 'mean',
+                'error_percentage': 'mean',
+                'transaction_name': 'count',
+                'end_time': 'first',
+                'exit_code': 'first'
+            }).iloc[0]
+            
+            baseline_summary = baseline_result.get('summary', {}) if 'error' not in baseline_result else {}
+            
+            # Generate prompt based on report type
             if report_type == 'summary':
-                test_df = analyzer.data_source.get_test_by_id(latest_test)
-                test_summary = test_df.groupby('testplan').agg({
-                    'perc_95': 'mean',
-                    'error_percentage': 'mean',
-                    'transaction_name': 'count',
-                    'end_time': 'first',
-                    'exit_code': 'first'
-                }).iloc[0]
-                
-                if 'error' not in baseline_result:
-                    baseline_summary = baseline_result['summary']
-                else:
-                    baseline_summary = {}
-                
-                st.session_state.pending_question = f"""Analyze the most recent test run: {latest_test}
-
-ACTUAL TEST DATA:
-- Test ID: {latest_test}
-- End Time: {test_summary['end_time']}
-- Exit Code: {'PASS' if test_summary['exit_code'] == 1 else 'FAIL'}
-- Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
-- Total Transactions: {int(test_summary['transaction_name'])}
-- Average P95: {test_summary['perc_95']:.0f}ms
-- Error Rate: {test_summary['error_percentage']:.2f}%
-- Avg P95 Deviation from Baseline: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
-- Critical Deviations (>50%): {baseline_summary.get('critical_deviations_count', 0)} transactions
-
-Provide a concise summary with:
-1. **Overall Assessment**: PASS/FAIL with confidence
-2. **Key Metrics**: P95, error rate, baseline comparison
-3. **Key Issues**: Critical deviations (if any)
-4. **Release Readiness**: GO/NO-GO and why
-
-Keep it brief - 4-5 sentences max."""
+                st.session_state.pending_question = get_summary_prompt_with_data(
+                    latest_test, test_summary, baseline_summary, pred_result
+                )
             
             elif report_type == 'po_report':
-                test_df = analyzer.data_source.get_test_by_id(latest_test)
-                test_summary = test_df.groupby('testplan').agg({
-                    'perc_95': 'mean',
-                    'error_percentage': 'mean',
-                    'transaction_name': 'count',
-                    'end_time': 'first',
-                    'exit_code': 'first'
-                }).iloc[0]
-                
-                if 'error' not in baseline_result:
-                    baseline_summary = baseline_result['summary']
-                    critical_txns = [t for t in baseline_result['transactions'] 
-                                   if t['has_baseline'] and t['deviation']['p95_pct'] > 50]
-                    critical_list = "\\n".join([f"- {t['name']}: {t['actual']['p95']:.0f}ms vs {t['baseline']['p95']:.0f}ms baseline ({t['deviation']['p95_pct']:+.1f}%)" 
-                                              for t in sorted(critical_txns, key=lambda x: x['deviation']['p95_pct'], reverse=True)[:5]])
-                else:
-                    baseline_summary = {}
-                    critical_list = "No baseline data available"
-                
-                st.session_state.pending_question = f"""Generate a release sign-off report for test {latest_test} for Product Owner review.
-
-ACTUAL TEST DATA (DO NOT MODIFY):
-
-Test Overview:
-- Test ID: {latest_test}
-- End Time: {test_summary['end_time']}
-- Result: {'PASS' if test_summary['exit_code'] == 1 else 'FAIL'}
-- Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
-- Transactions Tested: {int(test_summary['transaction_name'])}
-- Average P95: {test_summary['perc_95']:.0f}ms
-- Error Rate: {test_summary['error_percentage']:.2f}%
-
-Performance vs Baseline:
-- Average P95 Deviation: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
-- Critical Deviations (>50%): {baseline_summary.get('critical_deviations_count', 0)} transactions
-
-Critical Transactions:
-{critical_list if critical_list else 'None - all transactions within acceptable limits'}
-
-Create a professional report with:
-
-1. Executive Summary (2-3 sentences about overall performance)
-
-2. Test Overview (use the EXACT data above - do not make up transaction names)
-
-3. Performance Assessment:
-   - Summarize performance vs baseline
-   - Highlight any critical issues
-
-4. Risk Assessment:
-   - High/Medium/Low risk classification
-   - Impact on users
-
-5. **Release Recommendation** (bold):
-   - **GO** / **NO-GO** / **GO WITH CAUTION**
-   - Justification in 2-3 sentences
-
-Format: Professional, concise, non-technical language suitable for stakeholder presentation."""
+                critical_list = format_critical_transactions_list(baseline_result)
+                st.session_state.pending_question = get_po_report_prompt_with_data(
+                    latest_test, test_summary, baseline_summary, critical_list, pred_result
+                )
             
             elif report_type == 'dev_report':
-                if 'error' not in baseline_result:
-                    txn_table = "\\n| Transaction | Actual P95 | Baseline P95 | Δ% | Actual Avg RT | Baseline Avg RT | Δ% | Error% | Status |\\n"
-                    txn_table += "|------------|-----------|-------------|-----|--------------|----------------|-----|---------|--------|\\n"
-                    
-                    for txn in baseline_result['transactions']:
-                        if txn['has_baseline']:
-                            status = "⚠️ CRITICAL" if txn['deviation']['p95_pct'] > 50 else "⚠️ DEGRADED" if txn['deviation']['p95_pct'] > 20 else "✅ PASS"
-                            txn_table += f"| {txn['name']} | {txn['actual']['p95']:.0f}ms | {txn['baseline']['p95']:.0f}ms | {txn['deviation']['p95_pct']:+.1f}% | {txn['actual']['avg_rt']:.0f}ms | {txn['baseline']['avg_rt']:.0f}ms | {txn['deviation']['avg_rt_pct']:+.1f}% | {txn['actual']['error_pct']:.1f}% | {status} |\\n"
-                    
-                    baseline_summary = baseline_result['summary']
-                else:
-                    txn_table = "No baseline data available"
-                    baseline_summary = {}
-                
-                st.session_state.pending_question = f"""Generate a detailed engineering report for test {latest_test} for Dev/QA teams.
-
-Classifier Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
-
-ACTUAL BASELINE COMPARISON DATA (DO NOT MODIFY - USE EXACT TRANSACTION NAMES):
-
-Test Type: {baseline_summary.get('test_type', 'N/A')}
-Number of Clients: {baseline_summary.get('num_clients', 'N/A')}
-Total Transactions: {baseline_summary.get('total_transactions', 'N/A')}
-Transactions with Baseline: {baseline_summary.get('transactions_with_baseline', 'N/A')}
-
-Classifier Features:
-- Avg P95 Deviation: {baseline_summary.get('avg_p95_deviation_pct', 0):.1f}%
-- Max P95 Deviation: {baseline_summary.get('max_p95_deviation_pct', 0):.1f}%
-- Critical Transactions (>50%): {baseline_summary.get('pct_txn_critical_p95', 0):.1f}% ({baseline_summary.get('critical_deviations_count', 0)} txns)
-- Degraded Transactions (20-50%): {baseline_summary.get('pct_txn_degraded_p95', 0):.1f}% ({baseline_summary.get('degraded_deviations_count', 0)} txns)
-
-Transaction-level Performance Breakdown (ACTUAL DATA - DO NOT CHANGE TRANSACTION NAMES):
-{txn_table}
-
-Create a technical report with:
-
-1. Classifier Analysis:
-   - Prediction: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
-   - Summarize the classifier features above
-   
-2. Transaction-level Performance:
-   - Include the EXACT table above (do not modify numbers or transaction names)
-   - Highlight critical and degraded transactions
-   
-3. Critical Issues Analysis:
-   - List transactions with >50% P95 degradation
-   - Explain likely root causes
-   
-4. Action Items:
-   - Specific debugging steps for worst performers
-   - Code areas to investigate
-   - Optimization recommendations
-
-Format: Technical depth suitable for engineers. Use the ACTUAL data provided above - do not make up transaction names like Login, Search, Checkout."""
+                txn_table = format_transaction_table(baseline_result)
+                st.session_state.pending_question = get_dev_report_prompt_with_data(
+                    latest_test, txn_table, baseline_summary, pred_result
+                )
             
             elif report_type == 'stakeholder_report':
-                if 'error' not in baseline_result:
-                    summary = baseline_result['summary']
-                    txns_sorted = sorted([t for t in baseline_result['transactions'] if t['has_baseline']], 
-                                       key=lambda x: x['deviation']['p95_pct'], reverse=True)[:5]
-                    qa_table = "\\n| Transaction | P95 | Baseline P95 | Δ% | Status |\\n"
-                    qa_table += "|------------|-----|-------------|-----|--------|\\n"
-                    for txn in txns_sorted:
-                        status = "❌ CRITICAL" if txn['deviation']['p95_pct'] > 50 else "⚠️ WARN" if txn['deviation']['p95_pct'] > 20 else "✅ PASS"
-                        qa_table += f"| {txn['name']} | {txn['actual']['p95']:.0f}ms | {txn['baseline']['p95']:.0f}ms | {txn['deviation']['p95_pct']:+.1f}% | {status} |\\n"
-                else:
-                    summary = {}
-                    qa_table = "No baseline data available"
-                
-                st.session_state.pending_question = f"""Generate a stakeholder summary for test {latest_test}.
-
-ACTUAL TEST DATA (DO NOT MODIFY - USE EXACT TRANSACTION NAMES):
-
-Test Summary:
-- Test ID: {latest_test}
-- Classifier: {pred_result['prediction']} ({conf_pct:.1f}% confidence)
-- Total Transactions: {summary.get('total_transactions', 'N/A')}
-- Transactions with Baseline: {summary.get('transactions_with_baseline', 'N/A')}
-
-Quality Metrics:
-- Avg P95 Deviation: {summary.get('avg_p95_deviation_pct', 0):.1f}%
-- Max P95 Deviation: {summary.get('max_p95_deviation_pct', 0):.1f}%
-- Critical Transactions: {summary.get('critical_deviations_count', 0)}
-- Degraded Transactions: {summary.get('degraded_deviations_count', 0)}
-
-Top 5 Transactions by Performance (ACTUAL DATA):
-{qa_table}
-
-Create a stakeholder summary with:
-
-1. Test Summary:
-   - Use the data above
-   - Classifier confidence interpretation
-
-2. Transaction Highlights:
-   - Include the EXACT table above (do not make up transaction names)
-   - Pass/Fail breakdown
-   
-3. Why Classifier Marked as {pred_result['prediction']}:
-   - Explain based on actual metrics
-   - Reference specific transactions from the table above
-
-4. **Release Recommendation** (bold):
-   - Ready for release / Needs review / Blocked
-   - Brief justification
-
-Format: Brief, business-focused. Use ACTUAL transaction names from the data above."""
+                qa_table = format_qa_table(baseline_result)
+                st.session_state.pending_question = get_stakeholder_report_prompt_with_data(
+                    latest_test, qa_table, baseline_summary, pred_result
+                )
         else:
             st.session_state.pending_question = "No tests found in database."
         
+        # This was missing! We set it to true, but never reset it in this path.
+        st.session_state.is_processing = False 
         st.rerun()
     
     # === Process pending question (spinner appears after chat history, above input) ===
@@ -625,14 +553,34 @@ Format: Brief, business-focused. Use ACTUAL transaction names from the data abov
             st.markdown(answer)
         
         st.session_state.conversation_history.append((question, answer))
-    
-    # Question input
-    question = st.chat_input("Ask a question about your test data...")
-    
-    if question:
-        st.session_state.pending_question = question
-        st.rerun()
-    
+        st.session_state.is_processing = False # Reset processing state
+        st.rerun() # Rerun to re-enable buttons immediately
+
+    # Placeholder for the loading indicator
+    loading_placeholder = st.empty()
+
+    # Disable input form while processing
+    if st.session_state.is_processing:
+        loading_placeholder.info("🤖 Thinking... please wait.")
+
+    with st.form(key="chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            question = st.text_input(
+                "Ask a question about your test data...",
+                key="chat_input",
+                disabled=st.session_state.is_processing,
+                label_visibility="collapsed",
+                placeholder="Ask a question about your test data..."
+            )
+        with col2:
+            submitted = st.form_submit_button("💬 Ask", use_container_width=True, disabled=st.session_state.is_processing)
+
+        if submitted and question:
+            st.session_state.pending_question = question
+            st.session_state.is_processing = True
+            st.rerun()
+
     # Quick questions
     st.markdown("---")
     st.markdown("**💡 Quick Questions :**")
@@ -640,23 +588,27 @@ Format: Brief, business-focused. Use ACTUAL transaction names from the data abov
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("📋 Last 5 tests?"):
+        if st.button("📋 Last 5 tests?", disabled=st.session_state.is_processing):
             st.session_state.pending_question = "What are the last 5 test runs?"
+            st.session_state.is_processing = True
             st.rerun()
     
     with col2:
-        if st.button("❌ Failed tests?"):
+        if st.button("❌ Failed tests?", disabled=st.session_state.is_processing):
             st.session_state.pending_question = "Show me all failed tests"
+            st.session_state.is_processing = True
             st.rerun()
     
     with col3:
-        if st.button("📊 Pass rate?"):
+        if st.button("📊 Pass rate?", disabled=st.session_state.is_processing):
             st.session_state.pending_question = "What is the overall pass rate?"
+            st.session_state.is_processing = True
             st.rerun()
     
     with col4:
-        if st.button("🔍 Summarize last test"):
+        if st.button("🔍 Summarize last test", disabled=st.session_state.is_processing):
             st.session_state.generate_report_type = 'summary'
+            st.session_state.is_processing = True
             st.rerun()
     
     # Report generation
@@ -665,24 +617,27 @@ Format: Brief, business-focused. Use ACTUAL transaction names from the data abov
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📝 PO Sign-Off Report"):
+        if st.button("📝 PO Sign-Off Report", disabled=st.session_state.is_processing):
             st.session_state.generate_report_type = 'po_report'
+            st.session_state.is_processing = True
             st.rerun()
     
     with col2:
-        if st.button("🔬 Dev/QA Report"):
+        if st.button("🔬 Dev/QA Report", disabled=st.session_state.is_processing):
             st.session_state.generate_report_type = 'dev_report'
+            st.session_state.is_processing = True
             st.rerun()
     
     with col3:
-        if st.button("📊 Stakeholder Summary"):
+        if st.button("📊 Stakeholder Summary", disabled=st.session_state.is_processing):
             st.session_state.generate_report_type = 'stakeholder_report'
+            st.session_state.is_processing = True
             st.rerun()
 
 # ============================================================================
 # PAGE: Test Overview
 # ============================================================================
-elif page == "📈 Test Overview":
+elif page == "📈 Testing Overview":
     df = st.session_state.df
     
     st.markdown("### 📈 Test Dataset Overview")
@@ -915,7 +870,7 @@ elif page == "🔍 Deep Dive":
                     loading_placeholder.info("⏳ Generating PO report... check below for response")
                     
                     conf_pct = confidence if confidence >= 2 else confidence * 100
-                    question = f"Generate a release sign-off report for test {selected_test} for Product Owner. Include: executive summary, test overview with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), performance vs baseline, critical issues, and bold **Release Recommendation** (GO/NO-GO/WITH CAUTION)."
+                    question = get_po_report_prompt_short(selected_test, pred_result['prediction'], conf_pct)
                     
                     # Process immediately without page refresh
                     with st.spinner("🤖 Analyzing..."):
@@ -934,7 +889,7 @@ elif page == "🔍 Deep Dive":
                     loading_placeholder.info("⏳ Generating engineering report... check below for response")
                     
                     conf_pct = confidence if confidence >= 2 else confidence * 100
-                    question = f"Generate a detailed engineering report for test {selected_test}. Include: classifier analysis ({pred_result['prediction']}, {conf_pct:.1f}% confidence), complete transaction-level breakdown with baseline comparisons showing ALL transactions with actual data, critical issues (>50% degradation), and actionable debugging steps."
+                    question = get_eng_report_prompt_short(selected_test, pred_result['prediction'], conf_pct)
                     
                     with st.spinner("🤖 Analyzing..."):
                         answer, tokens = ask_about_test(selected_test, question)
@@ -952,7 +907,7 @@ elif page == "🔍 Deep Dive":
                     loading_placeholder.info("⏳ Generating QA report... check below for response")
                     
                     conf_pct = confidence if confidence >= 2 else confidence * 100
-                    question = f"Generate a QA report for test {selected_test}. Include: test summary with classifier prediction ({pred_result['prediction']}, {conf_pct:.1f}% confidence), quality metrics vs baseline with transaction table, pass/fail analysis, and bold **Sign-Off Status** (ready/needs retest/blocked)."
+                    question = get_qa_report_prompt_short(selected_test, pred_result['prediction'], conf_pct)
                     
                     with st.spinner("🤖 Analyzing..."):
                         answer, tokens = ask_about_test(selected_test, question)
@@ -970,7 +925,7 @@ elif page == "🔍 Deep Dive":
                     loading_placeholder.info("⏳ Analyzing prediction... check below for response")
                     
                     conf_pct = confidence if confidence >= 2 else confidence * 100
-                    question = f"Explain why the classifier predicted {pred_result['prediction']} for test {selected_test} with {conf_pct:.1f}% confidence. What were the key factors? Which transactions influenced this decision?"
+                    question = get_explain_prediction_prompt(selected_test, pred_result['prediction'], conf_pct)
                     
                     with st.spinner("🤖 Analyzing..."):
                         answer, tokens = ask_about_test(selected_test, question)
