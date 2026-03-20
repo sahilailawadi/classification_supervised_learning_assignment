@@ -51,21 +51,49 @@ A3_Code/
 **If deployed to Streamlit Cloud**, access it here:
 
 ```
-https://ailawadia3-llm-demo.streamlit.app/
+https://ailawadia4.streamlit.app/
 ```
-*(Note: If not yet deployed, skip to Option 3 to run locally)*
 
 **What you can try:**
-- 💬 **Chat Analysis** — Ask "What are the last 5 test runs?" or "Show me all failed tests"  
-  **Value:** Take the model for a drive — chat naturally and get analysis, or try pre-configured prompts to see MCP tool integration
-- 📊 **Generate Reports** — Click report buttons to see PO sign-off, dev analysis, stakeholder summary  
-  **Value:** Experience automated report generation with real data embedded to prevent hallucination
-- 🔍 **Deep Dive** — Select any test and get LLM-powered analysis with baseline comparisons  
-  **Value:** Get an engineer's view of test results with LLM insights, then ask follow-up questions in chat
-- 🤖 **Classifier Predictions** — View ML model's PASS/FAIL prediction with confidence scores  
-  **Value:** See how the Random Forest classifier makes decisions — view all 19 features it used
-- 🆚 **Compare Tests** — Side-by-side comparison of a passing vs failing test  
-  **Value:** Understand what separates good runs from bad — LLM explains the key differences
+
+### 💬 Chat Analysis — Ask questions in natural language, or try pre-configured prompts to see MCP tool integration
+Ask in chat:
+- "What are the last 5 test runs?"
+- "Show me failed tests."
+
+**Expected behavior:**
+- Response includes concrete test runs/metrics (not generic answers)
+
+### 📊 Generate Reports — Click report buttons to see PO sign-off, dev analysis, stakeholder summary
+Generate reports:
+- PO report  
+- Eng report
+
+**Expected behavior:**
+- Reports include test-specific values and transaction-level references
+- Tone differs by audience (business vs technical)
+
+### 🔍 Deep Dive — Select any test and get LLM-powered analysis with baseline comparisons
+Pick a test and ask:
+- "Why did this test fail?"  
+- Follow-up: "What should be investigated first?"
+
+**Expected behavior:**
+- Follow-up stays contextual to selected test and prior outputs
+
+### 🆚 Compare Tests — Side-by-side comparison of two tests with performance differences explained
+Compare a passing and failing run.
+
+**Expected behavior:**
+- Side-by-side differences (P95/error/transaction deltas) are described
+
+### 🤖 Classifier Predictions — View ML model's PASS/FAIL prediction with confidence scores and feature values
+
+Confirm prediction + confidence are visible and referenced by analysis.
+
+**Expected behavior:**
+- Classifier prediction (PASS/FAIL) and confidence (%) are displayed
+- LLM analysis references these values
 
 ---
 
@@ -76,16 +104,47 @@ Click to open the LLM analysis notebook in your browser:
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/sahilailawadi/classification_supervised_learning_assignment/HEAD?labpath=notebooks%2Fllm_analysis_demo.ipynb) **← Click to launch**
 
 **What you can try:**
-- Run `ask_question("What are the last 5 test runs?")` — MCP-powered queries  
-  **Value:** See the code that routes questions to MCP tools — inspect prompts, modify questions, trace execution
-- Run `ask_about_test(0, "What are the slowest transactions?")` — Test-specific analysis  
-  **Value:** Observe anti-hallucination in action — real test data fetched before LLM sees the question
-- Run `generate_report("summary")` — All 4 report types (Summary, PO, Dev, Stakeholder)  
-  **Value:** Inspect how reports embed actual transaction names and metrics to prevent fabrication
-- Run baseline comparison cells — See per-transaction P95 deviations  
-  **Value:** Understand how the classifier uses baselines for feature engineering
-- Run classifier prediction cells — View features + confidence  
-  **Value:** See exactly what the Random Forest model sees — all 19 normalized features
+
+### 💬 Chat Analysis — Ask questions in natural language, or try pre-configured prompts to see MCP tool integration
+Ask in chat:
+- "What are the last 5 test runs?"
+- "Show me failed tests."
+
+**Expected behavior:**
+- Response includes concrete test runs/metrics (not generic answers)
+
+### 📊 Generate Reports — Click report buttons to see PO sign-off, dev analysis, stakeholder summary
+Generate reports:
+- PO report  
+- Eng report
+
+**Expected behavior:**
+- Reports include test-specific values and transaction-level references
+- Tone differs by audience (business vs technical)
+
+### 🔍 Deep Dive — Select any test and get LLM-powered analysis with baseline comparisons
+Pick a test and ask:
+- "Why did this test fail?"  
+- Follow-up: "What should be investigated first?"
+
+**Expected behavior:**
+- Follow-up stays contextual to selected test and prior outputs
+
+### 🆚 Compare Tests — Side-by-side comparison of two tests with performance differences explained
+Compare a passing and failing run.
+
+**Expected behavior:**
+- Side-by-side differences (P95/error/transaction deltas) are described
+
+### 🤖 Classifier Predictions — View ML model's PASS/FAIL prediction with confidence scores and feature values
+
+Confirm prediction + confidence are visible and referenced by analysis.
+
+**Expected behavior:**
+- Classifier prediction (PASS/FAIL) and confidence (%) are displayed
+- LLM analysis references these values
+
+---
 
 **Note:** Binder may take 1-2 minutes to build the environment on first launch. You'll need to add your OpenAI API key in the setup cell.
 
