@@ -199,14 +199,22 @@ class TestAnalyzer:
         """
         print(f"🔍 Analyzing test: {testplan}")
         
-        # Get prediction
+        # Step 1: Get prediction
+        print("   📊 Step 1: Running classifier prediction...")
         result = self.predict_test(testplan)
+        confidence = result['confidence'] if result['confidence'] and result['confidence'] >= 2 else result['confidence'] * 100 if result['confidence'] else 0
+        print(f"      ✅ Prediction: {result['prediction']} ({confidence:.1f}% confidence)")
         
-        # Get raw data for context
+        # Step 2: Get raw data for context
+        print("   🔍 Step 2: Fetching transaction data from database...")
         df_raw = self.data_source.get_test_by_id(testplan)
+        print(f"      ✅ Loaded {len(df_raw)} transaction records")
         
-        # Build context for LLM
+        # Step 3: Build context for LLM (includes MCP tool call for baseline)
+        print("   📈 Step 3: Calling get_baseline_comparison() MCP tool...")
+        print("      ↳ Reusing database connection (no new connection overhead)")
         context = self._build_test_context(result, df_raw, include_transactions)
+        print("      ✅ Baseline comparison data embedded in prompt")
         
         # Create LLM prompt
         system_prompt = """You are an expert performance test analyst conducting a DETAILED DEEP DIVE analysis.
@@ -260,8 +268,9 @@ Provide a COMPREHENSIVE, DETAILED analysis covering:
 
 Format your response with clear markdown sections. Be detailed for critical issues - this is a deep dive, not a summary."""
         
-        # Get LLM analysis
-        print("   🤖 Querying LLM for analysis...")
+        # Step 4: Get LLM analysis
+        print("   🤖 Step 4: Sending to LLM for deep analysis...")
+        print("      ↳ Temperature: 0.7 (balanced analysis)")
         response = self.llm.chat(
             messages=[
                 {"role": "system", "content": system_prompt},

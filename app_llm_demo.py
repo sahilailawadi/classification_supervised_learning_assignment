@@ -753,12 +753,22 @@ elif page == "🔍 Deep Dive":
     if analyze_button:
         st.session_state.current_test = selected_test
         
-        with st.spinner("🤖 Analyzing test..."):
-            # Get prediction
+        # Detailed status instead of simple spinner
+        with st.status("🤖 Analyzing test...", expanded=True) as status:
+            st.write("🔍 Step 1: Running classifier prediction...")
             pred_result = analyzer.predict_test(selected_test)
+            confidence = pred_result['confidence'] if pred_result['confidence'] >= 2 else pred_result['confidence'] * 100
+            st.write(f"   ✅ Prediction: {pred_result['prediction']} ({confidence:.1f}% confidence)")
             
-            # Get LLM analysis
+            st.write("📊 Step 2: Fetching baseline comparison via MCP tool...")
+            st.write("   ↳ Reusing database connection (no new connection overhead)")
+            
+            st.write("🤖 Step 3: Sending test data to LLM for deep analysis...")
+            st.write("   ↳ Temperature: 0.7 (balanced analysis)")
             analysis = analyzer.analyze_test(selected_test, include_transactions=True)
+            st.write("   ✅ Analysis complete")
+            
+            status.update(label="✅ All analysis steps complete!", state="complete")
             
             # Store in session state for persistence across reruns
             st.session_state.current_analysis = {
@@ -1025,80 +1035,109 @@ elif page == "⚖️ Compare Tests":
         if test1 == test2:
             st.warning("⚠️ Please select two different tests")
         else:
-            with st.spinner("🤖 Performing comparison..."):
-                st.markdown("---")
-                
+            st.markdown("---")
+            
+            # Detailed status instead of simple spinner
+            with st.status("🤖 Performing comparison...", expanded=True) as status:
                 # Section 1: Test 1 vs Test 2 (Using centralized prompt)
                 st.markdown("### 🔄 Test 1 vs Test 2")
                 
+                st.write("📊 Step 1: Fetching transaction data for both tests...")
+                st.write(f"   ↳ Test 1: {test1}")
+                st.write(f"   ↳ Test 2: {test2}")
                 # Fetch detailed transaction data for both tests
                 df_test1 = analyzer.data_source.get_test_by_id(test1)
                 df_test2 = analyzer.data_source.get_test_by_id(test2)
+                st.write(f"   ✅ Loaded {len(df_test1)} transactions from Test 1, {len(df_test2)} from Test 2")
                 
+                st.write("🔍 Step 2: Embedding full transaction data in prompt...")
                 # Generate comparison prompt with FULL transaction data
                 comparison_prompt = get_test_comparison_prompt(test1, test2, df_test1, df_test2)
+                st.write("   ✅ Comparison context prepared (anti-hallucination pattern)")
                 
+                st.write("🤖 Step 3: Sending to LLM for transaction-level analysis...")
                 # Ask LLM with comprehensive context
-                with st.spinner("🤖 Analyzing transaction-level differences..."):
-                    result = analyzer.ask(
-                        "Provide a detailed comparison analysis of these two tests.",
-                        data_context=comparison_prompt,
-                        conversation_history=[]
-                    )
-                    st.markdown(result['answer'])
+                result = analyzer.ask(
+                    "Provide a detailed comparison analysis of these two tests.",
+                    data_context=comparison_prompt,
+                    conversation_history=[]
+                )
+                st.write("   ✅ Test comparison analysis complete")
                 
-                if include_baseline:
-                    # Section 2: Test 1 vs Baseline
-                    st.markdown("---")
-                    st.markdown(f"### 📈 Test 1 ({test1}) vs Baseline")
+                status.update(label="✅ Comparison ready!", state="complete")
+            
+            st.markdown(result['answer'])
+            
+            if include_baseline:
+                # Section 2: Test 1 vs Baseline
+                st.markdown("---")
+                st.markdown(f"### 📈 Test 1 ({test1}) vs Baseline")
+                
+                with st.status("📊 Fetching Test 1 baseline...", expanded=False) as baseline_status:
+                    st.write("🔧 Calling get_baseline_comparison MCP tool...")
+                    st.write("   ↳ Reusing database connection")
                     result1 = analyzer.ask(
                         f"Compare {test1} with baseline. Focus on key deviations and classifier features.",
                         conversation_history=st.session_state.conversation_history
                     )
-                    st.markdown(result1['answer'])
-                    
-                    # Section 3: Test 2 vs Baseline
-                    st.markdown("---")
-                    st.markdown(f"### 📈 Test 2 ({test2}) vs Baseline")
+                    tools = result1.get('tools_used', [])
+                    if tools:
+                        st.write(f"   ✅ Tools used: {', '.join(tools)}")
+                    baseline_status.update(label="✅ Test 1 baseline comparison complete", state="complete")
+                
+                st.markdown(result1['answer'])
+                
+                # Section 3: Test 2 vs Baseline
+                st.markdown("---")
+                st.markdown(f"### 📈 Test 2 ({test2}) vs Baseline")
+                
+                with st.status("📊 Fetching Test 2 baseline...", expanded=False) as baseline_status2:
+                    st.write("🔧 Calling get_baseline_comparison MCP tool...")
+                    st.write("   ↳ Reusing database connection")
                     result2 = analyzer.ask(
                         f"Compare {test2} with baseline. Focus on key deviations and classifier features.",
                         conversation_history=st.session_state.conversation_history
                     )
-                    st.markdown(result2['answer'])
+                    tools2 = result2.get('tools_used', [])
+                    if tools2:
+                        st.write(f"   ✅ Tools used: {', '.join(tools2)}")
+                    baseline_status2.update(label="✅ Test 2 baseline comparison complete", state="complete")
                 
-                # Section 4: Three-way Prediction Comparison
-                st.markdown("---")
-                st.markdown("### 📊 Predictions")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"**Test 1: {test1}**")
-                    pred1 = analyzer.predict_test(test1)
-                    subcol1, subcol2, subcol3 = st.columns(3)
-                    with subcol1:
-                        st.metric("Prediction", pred1['prediction'])
-                    with subcol2:
-                        conf1 = pred1['confidence'] if pred1['confidence'] >= 2 else pred1['confidence'] * 100
-                        st.metric("Confidence", f"{conf1:.1f}%")
-                    with subcol3:
-                        actual1 = pred1.get('actual_result', 'N/A')
-                        match1 = "✅" if pred1['prediction'] == actual1 else "❌"
-                        st.metric("Actual", f"{actual1} {match1}")
-                
-                with col2:
-                    st.markdown(f"**Test 2: {test2}**")
-                    pred2 = analyzer.predict_test(test2)
-                    subcol1, subcol2, subcol3 = st.columns(3)
-                    with subcol1:
-                        st.metric("Prediction", pred2['prediction'])
-                    with subcol2:
-                        conf2 = pred2['confidence'] if pred2['confidence'] >= 2 else pred2['confidence'] * 100
-                        st.metric("Confidence", f"{conf2:.1f}%")
-                    with subcol3:
-                        actual2 = pred2.get('actual_result', 'N/A')
-                        match2 = "✅" if pred2['prediction'] == actual2 else "❌"
-                        st.metric("Actual", f"{actual2} {match2}")
+                st.markdown(result2['answer'])
+            
+            # Section 4: Three-way Prediction Comparison
+            st.markdown("---")
+            st.markdown("### 📊 Predictions")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Test 1: {test1}**")
+                pred1 = analyzer.predict_test(test1)
+                subcol1, subcol2, subcol3 = st.columns(3)
+                with subcol1:
+                    st.metric("Prediction", pred1['prediction'])
+                with subcol2:
+                    conf1 = pred1['confidence'] if pred1['confidence'] >= 2 else pred1['confidence'] * 100
+                    st.metric("Confidence", f"{conf1:.1f}%")
+                with subcol3:
+                    actual1 = pred1.get('actual_result', 'N/A')
+                    match1 = "✅" if pred1['prediction'] == actual1 else "❌"
+                    st.metric("Actual", f"{actual1} {match1}")
+            
+            with col2:
+                st.markdown(f"**Test 2: {test2}**")
+                pred2 = analyzer.predict_test(test2)
+                subcol1, subcol2, subcol3 = st.columns(3)
+                with subcol1:
+                    st.metric("Prediction", pred2['prediction'])
+                with subcol2:
+                    conf2 = pred2['confidence'] if pred2['confidence'] >= 2 else pred2['confidence'] * 100
+                    st.metric("Confidence", f"{conf2:.1f}%")
+                with subcol3:
+                    actual2 = pred2.get('actual_result', 'N/A')
+                    match2 = "✅" if pred2['prediction'] == actual2 else "❌"
+                    st.metric("Actual", f"{actual2} {match2}")
 
 # Footer
 st.markdown("---")

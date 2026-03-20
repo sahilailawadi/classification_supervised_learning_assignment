@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-03-20T15:41:33.665311",
+  "mode": "work",
+  "tests": {
+    "temperature_variations": {
+      "temp_0.1": {
+        "temperature": 0.1,
+        "test_id": "LoadTest_20260227T060941Z",
+        "response": "Here\u2019s an analysis and recommendations based on your LoadTest_20260227T060941Z results:\n\n### Performance Analysis\n\n- **Exit Code: 3.0**  \n  Typically, exit code 3 indicates a test failure due to errors or thresholds not met.\n\n- **Error Rate: 12.64%**  \n  This is high. Industry standards usually aim for <1% error rate in load tests. Over 10% suggests significant instability or failures under load.\n\n- **Avg P95: 60334ms (60.3 seconds)**  \n  The 95th percentile response time is extremely high. Most users are experiencing very slow responses, indicating severe performance bottlenecks.\n\n- **Transactions: 59**  \n  The total number of transactions is low, possibly due to errors or slow responses limiting throughput.\n\n---\n\n### Recommendations\n\n1. **Investigate Error Sources**\n   - Review logs and error messages to identify root causes (e.g., timeouts, server errors, database failures).\n   - Categorize errors by type and frequency.\n\n2. **Profile Application Bottlenecks**\n   - Use APM tools to trace slow transactions.\n   - Identify slow endpoints, database queries, or external dependencies.\n\n3. **Infrastructure Review**\n   - Check server CPU, memory, and network utilization during the test.\n   - Ensure adequate resources and scaling mechanisms are in place.\n\n4. **Test Environment Validation**\n   - Confirm the test environment matches production in terms of configuration and capacity.\n   - Validate test data and setup.\n\n5. **Optimize and Retest**\n   - Address identified bottlenecks (code, database, infrastructure).\n   - Reduce error rate and improve response times.\n   - Retest with similar or increased load to validate improvements.\n\n6. **Threshold Adjustment**\n   - Set realistic performance thresholds for error rate (<1%) and P95 (<2s for most web apps).\n   - Use these thresholds to gate releases.\n\n---\n\n### Summary\n\nYour system is not handling the current load effectively, with high error rates and slow response times. Immediate investigation and remediation are needed before scaling or releasing to production. Focus on error analysis, performance profiling, and infrastructure review, followed by targeted optimizations and retesting.\n\nIf you need help interpreting specific error logs or profiling results, please provide those details.",
+        "tokens": 552,
+        "response_length": 2264,
+        "word_count": 318
+      },
+      "temp_0.7": {
+        "temperature": 0.7,
+        "test_id": "LoadTest_20260227T060941Z",
+        "response": "**Analysis of LoadTest_20260227T060941Z**\n\n**Test Results:**\n- **Exit Code:** 3.0 (Indicates test failure; often due to SLA breach, high errors, or resource issues)\n- **Error Rate:** 12.64% (High; typically error rates above 2% require investigation)\n- **Avg P95 Latency:** 60,334 ms (60.3 seconds; Extremely high \u2013 likely indicates severe performance issues)\n- **Transactions:** 59 (Low sample size; may affect reliability of statistics)\n\n**Detailed Analysis:**\n- **High Error Rate:** Over 1 in 10 transactions failed. This may indicate application errors, timeouts, or network issues.\n- **Very High Latency:** 95th percentile response time is over 60 seconds, suggesting the system is either not scaling, has severe bottlenecks, or is overloaded.\n- **Low Transaction Count:** Only 59 transactions were processed. This can result from test misconfiguration, system inability to handle load, or early termination due to errors.\n- **Exit Code 3.0:** Most load test tools use this for test failures, often related to SLA violations or critical errors.\n\n**Recommendations \u2013 Next Steps:**\n\n1. **Review Application Logs & Error Messages**\n   - Identify the root cause of failed transactions.\n   - Look for exceptions, timeouts, or resource exhaustion in server logs.\n\n2. **Check Infrastructure Health**\n   - Examine CPU, memory, disk, and network usage during the test.\n   - Look for resource saturation or failures.\n\n3. **Validate Test Configuration**\n   - Ensure ramp-up, concurrency, and transaction mix are appropriate.\n   - Verify that the test did not overload the system beyond its design limits.\n\n4. **Increase Sample Size**\n   - Rerun the test with more transactions to ensure statistical reliability.\n   - Consider running for a longer duration or with more virtual users.\n\n5. **Profile Application Performance**\n   - Use APM tools to pinpoint the slowest operations and bottlenecks.\n   - Identify database, external service, or code-level issues.\n\n6. **Error Breakdown**\n   - Categorize errors (e.g., HTTP 5xx, 4xx, timeouts).\n   - Determine if errors are systemic or isolated.\n\n7. **System Tuning & Optimization**\n   - If bottlenecks are identified, optimize code, queries, or infrastructure.\n   - Scale horizontally or",
+        "tokens": 583,
+        "response_length": 2226,
+        "word_count": 321
+      },
+      "temp_1.0": {
+        "temperature": 1.0,
+        "test_id": "LoadTest_20260227T060941Z",
+        "response": "**Analysis of LoadTest_20260227T060941Z:**\n\n- **Exit Code:** 3.0  \n  *Typically indicates an error or abnormal test completion (may vary by tool; in JMeter, for example, exit code 3 means one or more threads failed).*\n- **Error Rate:** 12.64%  \n  *High error rate; industry-acceptable rates are generally < 1-2%.*\n- **Avg P95:** 60,334 ms (60.3s)  \n  *Extremely slow; P95 means 95% of transactions took \u226460s to complete, which is far above acceptable performance thresholds for most applications.*\n- **Transactions:** 59  \n  *Low transaction count; may indicate limited throughput, possible application bottleneck, or test misconfiguration.*\n\n**Performance Issues Identified:**\n- Significant errors during the test (12.64%).\n- Very poor latency: 60s+ P95 response times.\n- Low throughput; only 59 transactions completed, possibly due to slow responses or system limits.\n\n---\n\n**Recommendations:**\n\n1. **Root Cause Analysis:**\n   - Review application logs and infrastructure metrics during test time to identify bottlenecks (CPU, memory, DB, network).\n   - Analyze which transactions failed and why (timeouts, exceptions, data errors).\n\n2. **Test Review:**\n   - Check test configuration (user load, ramp-up pattern, data setup, scripts).\n   - Validate if the low transaction count is as expected or a sign of issues (e.g., threads stuck, server limits reached).\n\n3. **Application Profiling:**\n   - Profile backend service for slow queries, API bottlenecks, or resource starvation.\n   - Identify long-running transactions.\n\n4. **Error Rate Debugging:**\n   - Investigate the nature of errors (e.g., HTTP status codes, application exceptions).\n   - Map errors to specific scenarios or endpoints.\n\n5. **Scaling & Optimization:**\n   - If infrastructure is under-provisioned, scale resources or increase concurrency limits.\n   - Optimize application code and database queries identified as slow.\n\n6. **Retest with Monitoring:**\n   - Add monitoring (APM, server metrics, log aggregation).\n   - Re-run test after addressing core issues to validate improvements.\n\n7. **Stakeholder Communication:**\n   - Share findings and risks with development/ops teams.\n   - Set performance targets (e.g., <",
+        "tokens": 583,
+        "response_length": 2183,
+        "word_count": 297
+      }
+    },
+    "prompt_variations": {
+      "po_report": {
+        "test_id": "LoadTest_20260304T060726Z",
+        "audience": "Product Owner (Business)",
+        "response": "---\n\n**Release Sign-Off Report**  \n**Test: LoadTest_20260304T060726Z**  \n**Date Completed:** 2026-03-03\n\n---\n\n**1. Executive Summary**  \nThe recent load test (LoadTest_20260304T060726Z) was completed successfully, with all transactions passing and an error rate of 0%. Overall system performance met acceptance criteria, though several critical transactions exhibited significant latency compared to baseline measurements.\n\n**2. Test Overview**  \n- **Test ID:** LoadTest_20260304T060726Z  \n- **End Time:** 2026-03-03 23:09:31.482435-08:00  \n- **Result:** PASS  \n- **Classifier Prediction:** PASS (99.5% confidence)  \n- **Transactions Tested:** 54  \n- **Average P95:** 662ms  \n- **Error Rate:** 0.00%\n\n**3. Performance Assessment**  \nCompared to baseline, the average P95 deviation was minimal at -0.4%. However, four critical transactions demonstrated substantial performance degradation:\n- **/fixagent/getprofanityblacklist:** 1034ms vs 281ms baseline (+268.5%)\n- **/negotiate:** 626ms vs 214ms baseline (+193.3%)\n- **/fixagent/getscripts:** 1042ms vs 436ms baseline (+139.3%)\n- **/fixagent/getcustomscripts:** 1058ms vs 619ms baseline (+70.8%)\n\nThese deviations indicate potential bottlenecks in specific transaction flows under load.\n\n**4. Risk Assessment**  \n**Risk Level:** Medium  \nWhile overall system stability and error rates are acceptable, elevated response times in critical transactions may impact user experience, especially for functions reliant on these endpoints. Immediate user-facing impact is unlikely, but performance should be monitored closely post-release.\n\n**5. Release Recommendation**  \n**GO WITH CAUTION**  \nAlthough the test passed and there is strong confidence in overall system reliability, the identified latency in four critical transactions warrants attention. It is recommended to proceed with release, accompanied by enhanced monitoring and a plan for targeted performance improvements in the affected areas.\n\n---",
+        "tokens": 830,
+        "word_count": 237,
+        "has_go_decision": true,
+        "technical_terms": 3
+      },
+      "dev_report": {
+        "test_id": "LoadTest_20260304T060726Z",
+        "audience": "Engineering (Dev/QA)",
+        "response": "---\n# Engineering Load Test Report: LoadTest_20260304T060726Z\n\n**Test Type:** load_test  \n**Number of Clients:** 2000  \n**Total Transactions:** 54  \n**Transactions with Baseline:** 54  \n**Report Date:** 2026-03-04  \n**Classifier Prediction:** **PASS** (99.5% confidence)\n\n---\n\n## 1. Classifier Analysis\n\n**Prediction:**  \n- **PASS** (99.5% confidence)\n\n**Classifier Feature Summary:**\n- **Avg P95 Deviation:** -0.4%\n    - The overall 95th percentile (P95) latency is nearly unchanged compared to baseline.\n- **Max P95 Deviation:** 268.5%\n    - At least one transaction experienced a significant increase in P95 latency.\n- **Critical Transactions (>50% P95 degradation):** 7.4% (4 transactions)\n    - Four transactions show critical performance regressions.\n- **Degraded Transactions (20-50% P95 degradation):** 1.9% (1 transaction)\n    - One transaction is moderately degraded.\n- The majority of transactions (over 90%) are at or better than baseline.\n\n---\n\n## 2. Transaction-level Performance Breakdown\n\n### Table: Transaction Latency, Error, and Status\n\n| Transaction | Actual P95 | Baseline P95 | \u0394% | Actual Avg RT | Baseline Avg RT | \u0394% | Error% | Status |\n|------------|-----------|-------------|-----|--------------|----------------|-----|---------|--------|\n| /auth/login | 149ms | 238ms | -37.3% | 79ms | 103ms | -23.1% | 0.0% | \u2705 PASS |\n| /auth/logout | 148ms | 242ms | -38.7% | 71ms | 104ms | -31.8% | 0.0% | \u2705 PASS |\n| /auth/relogin | 135ms | 241ms | -43.9% | 68ms | 105ms | -35.7% | 0.0% | \u2705 PASS |\n| /auth/verifysession | 145ms | 240ms | -39.3% | 73ms | 103ms | -29.0% | 0.0% | \u2705 PASS |\n| /client/negotiate?hub=agentchatrequest | 74ms | 73ms | +0.7% | 53ms | 67ms | -21.1% | 0.0% | \u2705 PASS |\n| /client/negotiate?hub=niagraloghub | 15ms | 16ms | -6.9% | 8ms | 8ms | -7.5% | 0.0% | \u2705 PASS |\n| /configuration/getApplicationConfigurations | 252ms | 491ms | -48.7% | 139ms | 216ms | -35.5% | 0.0% | \u2705 PASS |\n| /customer/getaccountlocality | 154ms | 267ms | -42.4% | 86ms | 113ms | -24.0% | 0.0% | \u2705 PASS |\n| /customer/getaccountusers | 165ms | 257ms | -35.7% | 88ms | 114ms | -22.9% | 0.0% | \u2705 PASS |\n| /fixagent/getagentanalytics | 343ms | 489ms | -29.8% | 96ms | 124ms | -22.1% | 0.0% | \u2705 PASS |\n| /fixagent/getagentgroups | 458ms | 466ms | -1.8% | 109ms | 116ms | -6.7% | 0.0% | \u2705 PASS |\n| /fixagent/getagentmetrics | 413ms | 474ms | -12.9% | 106ms | 125ms | -15.1% | 0.0% | \u2705 PASS |\n| /fixagent/getAgentUserAttributes | 383ms | 493ms | -22.4% | 107ms | 122ms | -12.0% | 0.0% | \u2705 PASS |\n| /fixagent/getcustomscripts | 1058ms | 619ms | +70.8% | 201ms | 146ms | +37.6% | 0.0% | \u26a0\ufe0f CRITICAL |\n| /fixagent/getcustomsettings | 431ms | 482ms | -10.5% | 107ms | 121ms | -11.0% | 0.0% | \u2705",
+        "tokens": 3907,
+        "word_count": 458,
+        "has_go_decision": true,
+        "technical_terms": 3
+      }
+    },
+    "self_consistency": {
+      "test_id": "LoadTest_20260304T060726Z",
+      "runs": [
+        {
+          "run": 1,
+          "response": "**Recommendation: GO**\n\n**Reasoning:**\n- **Result:** PASS\n- **Error Rate:** 0.00% (No errors detected, which means the system handled all requests successfully.)\n- **Avg P95:** 662ms (The 95th percentile average response time is well within common acceptance criteria for most systems, typically < 1s.)\n\n**Conclusion:**  \nLoadTest_20260304T060726Z meets the expected quality criteria. The test passed with zero errors and acceptable performance. It is approved for release.",
+          "recommendation": "GO",
+          "tokens": 186
+        },
+        {
+          "run": 2,
+          "response": "**LoadTest_20260304T060726Z Evaluation**\n\n- **Result:** PASS  \n- **Error Rate:** 0.00%  \n- **Avg P95 Latency:** 662ms  \n\n**Assessment:**\n- The test passed without errors.\n- Error rate is 0.00%, indicating no failed requests.\n- P95 latency is 662ms, which is within typical acceptable thresholds for most web applications (assuming your SLA allows up to 1s or higher).\n\n**Recommendation:**  \n**GO** for release.\n\n**Justification:**  \nAll key load test metrics (pass status, error rate, latency) meet standard release criteria. No performance or reliability concerns are indicated by these results.",
+          "recommendation": "GO",
+          "tokens": 220
+        },
+        {
+          "run": 3,
+          "response": "**LoadTest_20260304T060726Z Release Recommendation**\n\n**Result:** PASS  \n**Error Rate:** 0.00%  \n**Avg P95 Latency:** 662ms\n\n**Analysis:**\n- **Error Rate:** 0.00% indicates no errors during the load test. This is excellent and meets typical release criteria.\n- **Avg P95 Latency:** 662ms. P95 latency represents the 95th percentile response time; if your release criteria specify a P95 threshold (commonly < 1s for most web apps), this is acceptable.\n\n**Recommendation:**  \n**GO** for release.  \nThe load test passed with zero errors and acceptable latency. No performance or stability concerns are indicated.\n\n**Next Steps:**  \n- Proceed to production deployment.\n- Continue monitoring post-release.\n\nIf you have stricter latency requirements (<500ms), consider reviewing, but based on standard thresholds, this is a **GO**.",
+          "recommendation": "GO",
+          "tokens": 270
+        }
+      ],
+      "consistent": true,
+      "agreement_rate": 1.0,
+      "majority_decision": "GO"
+    },
+    "mcp_integration": {
+      "query": "What are the last 5 test runs and how did they perform?",
+      "answer": "Here are the last 5 test runs and their performance metrics:\n\n| Test Name                  | P95    | Errors  | Txns | Result | End Time                        |\n|----------------------------|--------|---------|------|--------|----------------------------------|\n| LoadTest_20260304T060726Z  | 662ms  | 0.0%    | 54   | PASS   | 2026-03-03 23:09:31.482435-08:00 |\n| LoadTest_20260302T113608Z  | 710ms  | 0.0%    | 54   | PASS   | 2026-03-02 04:38:24.516272-08:00 |\n| LoadTest_20260302T051326Z  | 673ms  | 0.0%    | 54   | PASS   | 2026-03-01 22:18:28.341968-08:00 |\n| LoadTest_20260227T124410Z  | 721ms  | 0.1%    | 54   | PASS   | 2026-02-27 05:46:14.138698-08:00 |\n| LoadTest_20260227T060941Z  | 60334ms| 12.6%   | 59   | FAIL   | 2026-02-26 23:11:44.887112-08:00 |\n\n**Key Patterns & Insights:**\n- The most recent 4 runs (top of table) all passed, with P95 response times between 662ms and 721ms and negligible error rates (\u2264 0.1%).\n- The oldest of the 5 (bottom) had a dramatic failure:\n    - P95 response time spiked to 60.3s (60334ms)\n    - Error rate was very high (12.6%)\n    - Result: FAIL\n- After that failure, performance stabilized: error rates dropped to zero, and response times returned to sub-second levels.\n\n**Actionable Recommendations:**\n- The system is currently stable, but the prior major failure (test #5) warrants investigation. Find root cause (resource saturation, code change, infrastructure issue) and ensure mitigation is permanent.\n- Continue monitoring for similar spikes; sudden degradation can severely impact user experience.\n- For ongoing testing, document any changes or deployments between the failed and passing runs to correlate with performance improvements.\n\n**User Experience & Capacity Impact:**\n- Current state: Users would experience fast responses (<1s) and reliable transactions.\n- Previous failure: Would have resulted in timeouts, errors, and poor usability for most users.\n\nLet me know if you want a deeper breakdown or trend visualization of these results.",
+      "tools_used": [
+        "query_tests"
+      ],
+      "tokens": 1130,
+      "tools_invoked": 1
+    },
+    "mcp_consistency": {
+      "query": "What are the last 5 test runs and how did they perform?",
+      "runs": [
+        {
+          "run": 1,
+          "tools_used": [
+            "query_tests"
+          ],
+          "tool_count": 1,
+          "tokens": 1139,
+          "answer_length": 2059
+        },
+        {
+          "run": 2,
+          "tools_used": [
+            "query_tests"
+          ],
+          "tool_count": 1,
+          "tokens": 1076,
+          "answer_length": 1710
+        },
+        {
+          "run": 3,
+          "tools_used": [
+            "query_tests"
+          ],
+          "tool_count": 1,
+          "tokens": 1099,
+          "answer_length": 1849
+        }
+      ],
+      "tools_consistent": true,
+      "consistent_tools": [
+        "query_tests"
+      ],
+      "avg_tokens": 1104.6666666666667,
+      "token_variance": 63,
+      "token_variance_pct": 5.703077851538926
+    }
+  },
+  "summary": {}
+}
